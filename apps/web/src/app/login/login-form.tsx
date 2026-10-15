@@ -97,7 +97,7 @@ export default function LoginForm() {
     <div className="login-form">
       <div className="login-identity-state">
         <span className="state-dot state-dot--muted" aria-hidden="true" />
-        <span>{loading ? "CHECKING AUTH STATUS" : configuration?.enabled ? "EVM SIGN-IN AVAILABLE" : "EVM SIGN-IN DISABLED"}</span>
+        <span>{loading ? "CHECKING AUTH STATUS" : configuration?.enabled ? "EVM SIGN-IN AVAILABLE" : "EVM SIGN-IN NOT CONFIGURED"}</span>
       </div>
 
       <button className="login-button" type="button" disabled={loading || busy || !configuration?.enabled} onClick={signIn}>

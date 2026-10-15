@@ -24,7 +24,7 @@ async function WunderTradingContent() {
         <div className="page-heading__copy">
           <div className="eyebrow"><span className="eyebrow-line" aria-hidden="true" />ACCOUNT / EXCHANGE TOOLS</div>
           <h1 id="wundertrading-title"><DepthText text="WunderTrading" /></h1>
-          <p>Read your connected profiles, live strategies, and recent strategy history. Keys are user-owned and encrypted; Veylora never requests withdrawal permission.</p>
+          <p>Read your connected profiles, live strategies, and recent strategy history. Keys are user-owned and encrypted, and Veylora calls only WunderTrading’s read endpoints.</p>
         </div>
         <span className="section-state">NO ORDER ROUTE</span>
       </section>
@@ -45,7 +45,7 @@ async function WunderTradingContent() {
         <WunderTradingDesk settings={settings} />
       </section>
 
-      <p className="chaingpt-disclosure">Veylora uses WunderTrading’s documented REST API. User API keys should allow only API-profile and strategy reads until that key owner separately approves trading. Admin feature switches never replace per-key approval or Veylora’s live risk gates.</p>
+      <p className="chaingpt-disclosure">Veylora uses WunderTrading’s documented REST API for API-profile and strategy reads. Each switch in Access &amp; Integrations turns one read on or off; none of them can place an order, and the keys you connect stay encrypted at rest.</p>
     </TerminalShell>
   );
 }

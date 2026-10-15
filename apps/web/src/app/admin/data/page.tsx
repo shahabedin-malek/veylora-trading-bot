@@ -61,7 +61,7 @@ async function AdminDataContent() {
           ))}
         </dl>
         <p className="admin-data-note">
-          File paths, task descriptions, approval text, and API-key registry details are excluded.
+          File paths, task descriptions and API-key registry details are excluded.
         </p>
       </section>
     </TerminalShell>

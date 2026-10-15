@@ -117,7 +117,7 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
             <div><dt>REST SNAPSHOT</dt><dd>{quote?.provenance.freshness === "FRESH" ? "FRESH" : "WITHHELD"}</dd></div>
             <div><dt>HISTORY SOURCE</dt><dd>Coinbase daily candles</dd></div>
             <div><dt>LAST STORED BAR</dt><dd>{latestCandle?.closeTime.toISOString().slice(0, 10) ?? "Not connected"}</dd></div>
-            <div><dt>ORDER ENTRY</dt><dd>DISABLED</dd></div>
+            <div><dt>ORDER ENTRY</dt><dd>NOT WIRED</dd></div>
           </dl>
         </aside>
         </GlareHover>
@@ -133,8 +133,8 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
         </div>
         {!fearGreedEnabled ? (
           <div className="market-chart-empty" role="status">
-            <strong>Sentiment source disabled</strong>
-            <span>An administrator can enable Alternative.me under Access → Project readiness.</span>
+            <strong>Sentiment source off</strong>
+            <span>Turn Alternative.me on under Access → Project readiness to show it here.</span>
           </div>
         ) : fearGreed ? (
           <div className="sentiment-reading">
@@ -252,7 +252,7 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
         ) : (
           <div className="market-chart-empty" role="status">
             <strong>No image-backed stories</strong>
-            <span>Stories appear here when a financial RSS feed supplies an approved image.</span>
+            <span>Stories appear here when a financial RSS feed supplies an image.</span>
           </div>
         )}
       </section>

@@ -88,13 +88,13 @@ export function RiskPolicyForm({ initialSettings }: { initialSettings: RiskPolic
   return (
     <form className="risk-policy-form" onSubmit={save}>
       <div className="risk-settings-grid">
-        <NumberField id="risk-per-trade" label="MAX RISK / TRADE (%)" value={settings.maxRiskPerTradePercent} min="0.01" max="1" step="0.01" detail="Can only be tightened below 1%." onChange={(value) => updateNumber("maxRiskPerTradePercent", value)} />
-        <NumberField id="risk-open-exposure" label="MAX OPEN EXPOSURE (%)" value={settings.maxOpenExposurePercent} min="0.1" max="25" step="0.1" detail="Can only be tightened below 25%." onChange={(value) => updateNumber("maxOpenExposurePercent", value)} />
-        <NumberField id="risk-daily-loss" label="DAILY-LOSS HALT (%)" value={settings.dailyLossHaltPercent} min="0.1" max="2" step="0.1" detail="Can only be tightened below 2%." onChange={(value) => updateNumber("dailyLossHaltPercent", value)} />
-        <NumberField id="risk-trades-per-day" label="MAX TRADES / DAY" value={settings.maxTradesPerDay} min="1" max="10" step="1" detail="Maximum approved cap: 10." onChange={(value) => updateNumber("maxTradesPerDay", value)} />
-        <NumberField id="risk-leverage" label="MAX LEVERAGE" value={settings.defaultMaxLeverage} min="0.1" max="1" step="0.1" detail="Maximum approved cap: 1×." onChange={(value) => updateNumber("defaultMaxLeverage", value)} />
-        <NumberField id="risk-minimum-balance" label="MIN VERIFIED BALANCE (USD)" value={settings.minimumVerifiedBalanceUsd} min="20" step="1" detail="Cannot be lowered below USD 20." onChange={(value) => updateNumber("minimumVerifiedBalanceUsd", value)} />
-        <NumberField id="risk-first-day-cap" label="FIRST 24H EXPOSURE (USD)" value={settings.first24HourExposureUsd} min="0" max="20" step="1" detail="Cannot exceed USD 20." onChange={(value) => updateNumber("first24HourExposureUsd", value)} />
+        <NumberField id="risk-per-trade" label="MAX RISK / TRADE (%)" value={settings.maxRiskPerTradePercent} min="0.01" step="0.01" detail="Percent of configured capital per trade." onChange={(value) => updateNumber("maxRiskPerTradePercent", value)} />
+        <NumberField id="risk-open-exposure" label="MAX OPEN EXPOSURE (%)" value={settings.maxOpenExposurePercent} min="0.1" step="0.1" detail="Percent of configured capital held open at once." onChange={(value) => updateNumber("maxOpenExposurePercent", value)} />
+        <NumberField id="risk-daily-loss" label="DAILY-LOSS HALT (%)" value={settings.dailyLossHaltPercent} min="0.1" step="0.1" detail="Daily loss that halts new order intents, as a percent of capital." onChange={(value) => updateNumber("dailyLossHaltPercent", value)} />
+        <NumberField id="risk-trades-per-day" label="MAX TRADES / DAY" value={settings.maxTradesPerDay} min="1" step="1" detail="Whole order intents allowed per day." onChange={(value) => updateNumber("maxTradesPerDay", value)} />
+        <NumberField id="risk-leverage" label="MAX LEVERAGE" value={settings.defaultMaxLeverage} min="0.1" step="0.1" detail="Multiplier applied to configured capital." onChange={(value) => updateNumber("defaultMaxLeverage", value)} />
+        <NumberField id="risk-minimum-balance" label="MIN VERIFIED BALANCE (USD)" value={settings.minimumVerifiedBalanceUsd} min="0" step="1" detail="Lowest verified balance that passes the funds check." onChange={(value) => updateNumber("minimumVerifiedBalanceUsd", value)} />
+        <NumberField id="risk-first-day-cap" label="FIRST 24H EXPOSURE (USD)" value={settings.first24HourExposureUsd} min="0" step="1" detail="USD notional allowed in the first 24 hours after arming." onChange={(value) => updateNumber("first24HourExposureUsd", value)} />
       </div>
 
       <label className="risk-policy-field risk-symbol-field" htmlFor="risk-approved-symbols">
@@ -121,9 +121,9 @@ export function RiskPolicyForm({ initialSettings }: { initialSettings: RiskPolic
         <small>When engaged, the evaluator refuses every order intent.</small>
       </label>
 
-      <section className="risk-locked-controls" aria-labelledby="risk-locked-title">
-        <div className="section-kicker" id="risk-locked-title">LOCKED SAFEGUARDS</div>
-        <p>Stop-loss and maximum-loss bound · verified funds · approved venue · one-time live arm · per-user symbol allow-list · append-only audit · withdrawals permanently disabled.</p>
+      <section className="risk-evaluator-checks" aria-labelledby="risk-evaluator-title">
+        <div className="section-kicker" id="risk-evaluator-title">EVALUATOR CHECKS ON EVERY ORDER INTENT</div>
+        <p>Stop-loss present · maximum-loss bound · verified funds · venue in the configured list · one-time live arm · per-user symbol allow-list narrowing the site list above · append-only audit reachable. These are enforced in code on each intent; the values above are yours to set.</p>
       </section>
 
       <div className="risk-policy-actions">

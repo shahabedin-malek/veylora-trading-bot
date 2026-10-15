@@ -11,14 +11,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 # Legacy reference trees live beside the project, not inside it.
 EXTERNAL_DATA = Path(os.environ.get("VEYLORA_EXTERNAL_DATA", "/mnt/private-ai-data/trading"))
+# Reports live beside the reference trees; an in-repo docs/ is preferred if one exists.
+_DOCS_CANDIDATES = (EXTERNAL_DATA / "archived-from-project" / "docs", ROOT / "docs")
+DOCS = next((path for path in _DOCS_CANDIDATES if path.is_dir()), _DOCS_CANDIDATES[0])
 SOURCE = EXTERNAL_DATA / "old-scripts"
-OUTPUT = ROOT / "docs/SCRIPTS_TRIAGE.md"
+OUTPUT = DOCS / "SCRIPTS_TRIAGE.md"
 EXTENSIONS = {".py", ".sh", ".ps1"}
 SECRET_NAME = re.compile(r"(?i)(api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|password|passwd|private[_-]?key|wallet[_-]?secret|mnemonic|seed[_-]?phrase|credential|auth[_-]?token)")
 PLACEHOLDER = re.compile(r"(?i)(your[_ -]|example|placeholder|redacted|change.?me|\$\{|\{\{|<[^>]+>|xxxxx|dummy|fake|test[_ -]?)")
 KNOWN_SECRET_SHAPES = re.compile(rb"(?i)(?:-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----|\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}|sk-[A-Za-z0-9_-]{20,})\b)")
 DESTRUCTIVE = re.compile(r"(?i)(?:shutil\.rmtree|\.unlink\(|os\.remove|os\.rename|os\.replace|\brm\s+-rf\b|Remove-Item.{0,80}-Recurse|DROP\s+TABLE|TRUNCATE\s+TABLE|\.reset\s+--hard|git\s+clean\s+-fd)")
 SHELL_EXEC = re.compile(r"(?i)(?:subprocess\.(?:run|Popen|call)|os\.system|shell\s*=\s*True|Invoke-Expression|\beval\()")
+
+
+def show(path: Path) -> str:
+    """Path for messages: relative inside the project, absolute outside it."""
+    return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
 
 
 def likely_secret_value(value: str) -> bool:
@@ -132,7 +140,7 @@ def main() -> None:
     ])
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"Wrote {OUTPUT.relative_to(ROOT)} with {len(rows)} source-script rows; no source contents or secret values were printed.")
+    print(f"Wrote {show(OUTPUT)} with {len(rows)} source-script rows; no source contents or secret values were printed.")
     print(f"Credential-marker candidates: {sum('manual review required' in row[5] for row in rows)}; potential move candidates: {sum('move candidate' in row[3] for row in rows)}")
 
 

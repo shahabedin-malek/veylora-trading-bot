@@ -4,11 +4,13 @@ import { getRiskPolicySettings } from "@/lib/risk-controls/settings";
 export type RiskPolicyReader = () => Promise<AdjustableRiskPolicy>;
 
 export async function getTradingStatus(readPolicy: RiskPolicyReader = getRiskPolicySettings) {
+  // No order route is wired yet, so this is a statement of what the build does, not a
+  // gate that holds a finished capability back. Risk evaluation below still runs.
   const trading = {
     enabled: false as const,
-    status: "TRADING DISABLED" as const,
-    execution: "OFF" as const,
-    detail: "No order route is configured, so no orders can be submitted.",
+    status: "NO ORDER ROUTE" as const,
+    execution: "NOT WIRED" as const,
+    detail: "Order placement is not wired yet, so no order can be submitted.",
   };
 
   try {

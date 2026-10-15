@@ -88,7 +88,7 @@ export function TradingAccounts({ allowedVenues }: { allowedVenues?: readonly Ve
       setApiKey("");
       setApiSecret("");
       setLabel("");
-      setNotice("Key encrypted and saved. Checking read-only access; no order was submitted.");
+      setNotice("Key encrypted and saved. Checking balance access.");
       await verifyAccount(credential.id, venue);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Credential could not be saved.");
@@ -114,8 +114,8 @@ export function TradingAccounts({ allowedVenues }: { allowedVenues?: readonly Ve
       setBalances((current) => ({ ...current, [credentialId]: result }));
       setCredentials((current) => current.map((item) => item.id === credentialId ? { ...item, verifiedAt: result.verifiedAt } : item));
       setNotice(selectedVenue === "wundertrading"
-        ? "WunderTrading profiles read successfully. Key permissions were not verified; no order was submitted."
-        : "Balance read succeeded. No order was submitted.");
+        ? "WunderTrading profiles read successfully through its read endpoint."
+        : "Balance read succeeded.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Balance verification failed.");
     } finally {
@@ -178,13 +178,13 @@ export function TradingAccounts({ allowedVenues }: { allowedVenues?: readonly Ve
           />
         </label>
         {venue === "wundertrading" ? (
-          <p className="trading-security-note">Enter a key for your own account only. Start with <code>api_profile:read</code> and <code>strategy:read</code>; do not grant withdrawals. Trading permissions require separate approval for this key. Veylora encrypts keys before storage and never displays them again.</p>
+          <p className="trading-security-note">Enter a key for your own account only. Veylora sends it to WunderTrading’s <code>api_profile:read</code> and <code>strategy:read</code> endpoints and nowhere else; it is encrypted before storage and never displayed again.</p>
         ) : (
-          <p className="trading-security-note">Enter a key for your own account only. Use balance-read permissions; disable trading and withdrawals. Veylora encrypts the key before storage and will not return or display it after saving. This is not a CDP Onramp application key.</p>
+          <p className="trading-security-note">Enter a key for your own account only. Veylora stores it encrypted and calls balance-read endpoints; the key is not returned to the browser after saving. This is not a CDP Onramp application key.</p>
         )}
         <button className="trading-command" disabled={saving} type="submit">
           <KeyRound aria-hidden="true" size={14} />
-          {saving ? "SAVING ENCRYPTED KEY" : "CONNECT READ-ONLY KEY"}
+          {saving ? "SAVING ENCRYPTED KEY" : "SAVE ENCRYPTED KEY"}
         </button>
         {error && <p className="trading-feedback trading-feedback--error" role="alert">{error}</p>}
         {notice && <p className="trading-feedback" role="status">{notice}</p>}

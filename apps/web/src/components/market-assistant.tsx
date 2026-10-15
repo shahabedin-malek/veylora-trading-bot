@@ -86,7 +86,7 @@ export function MarketAssistant() {
           <div className="section-kicker">TOOL-USING · PUBLIC MARKET DATA</div>
           <h2 id="assistant-title">Market assistant</h2>
         </div>
-        <span className="section-state">{status === null ? "CHECKING ADAPTER" : status.adapterEnabled ? "ASSISTANT ENABLED" : "ADAPTER DISABLED"}</span>
+        <span className="section-state">{status === null ? "CHECKING ADAPTER" : status.adapterEnabled ? "ASSISTANT ON" : "ASSISTANT OFF IN ADMIN"}</span>
       </div>
 
       <div className={`assistant-model-state${status?.modelConfigured ? " is-configured" : ""}`} role="status">

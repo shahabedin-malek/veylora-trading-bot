@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
 
   const settings = await getIntegrationFeatureSettings().catch(() => null);
   if (!settings) return json({ error: "Integration settings are unavailable." }, 503);
-  if (!settings.tavilySearchEnabled) return json({ error: "Tavily Search is disabled by the administrator." }, 403);
+  if (!settings.tavilySearchEnabled) return json({ error: "Tavily Search is switched off in Access & Integrations." }, 403);
   if (!consumeTavilyRequest(user.id)) return json({ error: "Tavily request limit reached; try again in a minute." }, 429);
 
   try {

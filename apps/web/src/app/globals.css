@@ -392,8 +392,8 @@ p {
 .risk-kill-switch input { width: 16px; height: 16px; accent-color: var(--coral); }
 .risk-kill-switch small { color: var(--muted); font: 9px var(--sans); }
 
-.risk-locked-controls { max-width: 760px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
-.risk-locked-controls p { margin: 8px 0 0; color: var(--muted); font-size: 9px; line-height: 1.6; }
+.risk-evaluator-checks { max-width: 760px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.risk-evaluator-checks p { margin: 8px 0 0; color: var(--muted); font-size: 9px; line-height: 1.6; }
 .risk-policy-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; }
 .risk-policy-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 1px solid var(--mint); color: var(--mint); background: rgba(168, 228, 189, 0.08); font: 9px var(--mono); cursor: pointer; }
 .risk-policy-actions button:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -1223,6 +1223,7 @@ p {
 .paper-audit-list time { color: var(--faint); }
 .bot-backtest-summary ul,
 .bot-live-lock-list { display: grid; gap: 5px; margin: 0; padding-left: 15px; color: var(--amber); font-size: 9px; line-height: 1.5; }
+.bot-live-state { display: inline-flex; align-items: center; gap: 7px; color: var(--faint); font: 9px var(--mono); }
 
 @media (max-width: 520px) {
 	.assistant-compose { grid-template-columns: minmax(0, 1fr); }

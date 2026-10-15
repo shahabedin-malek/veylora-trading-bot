@@ -31,9 +31,9 @@ export default async function TradePage() {
             <div className="section-kicker">01 / EXCHANGE ACCESS</div>
             <h2 id="account-connections-title">Your connected accounts</h2>
           </div>
-          <span className="section-state">BALANCE READS ONLY</span>
+          <span className="section-state">BALANCE READS</span>
         </div>
-        <p className="trading-security-note">Supported now: Coinbase Advanced, Kraken, and Binance. Other exchanges require a reviewed connector before keys can be added. Use keys with read-only permissions; withdrawals and trading permissions must remain disabled.</p>
+        <p className="trading-security-note">Connectors exist for Coinbase Advanced, Kraken, and Binance; another venue joins when a connector is written. Keys are encrypted at rest, sent only to the venue you chose, and read balances or profiles.</p>
         <TradingAccounts />
       </section>
 
@@ -43,13 +43,13 @@ export default async function TradePage() {
             <div className="section-kicker">02 / EXECUTION</div>
             <h2 id="order-state-title">Live orders</h2>
           </div>
-          <span className="section-state">NOT AVAILABLE</span>
+          <span className="section-state">NOT WIRED YET</span>
         </div>
         <div className="trading-orders-state__body">
           <ArrowLeftRight aria-hidden="true" size={18} />
           <div>
-            <strong>Order placement is not available in this build.</strong>
-            <p><ShieldCheck aria-hidden="true" size={13} /> Accounts can be verified, but this page does not submit trades or withdrawals.</p>
+            <strong>Order placement is not wired yet.</strong>
+            <p><ShieldCheck aria-hidden="true" size={13} /> Accounts and balances can be verified; this page calls no order or withdrawal endpoint.</p>
           </div>
         </div>
       </section>

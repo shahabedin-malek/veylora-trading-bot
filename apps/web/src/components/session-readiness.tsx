@@ -13,9 +13,9 @@ function TradingState() {
     <div className="trading-readiness" role="status">
       <div className="session-state">
         <span className="state-dot state-dot--amber" aria-hidden="true" />
-        <span>TRADING DISABLED</span>
+        <span>NO ORDER ROUTE</span>
       </div>
-      <p>No order route is configured, so no orders can be submitted.</p>
+      <p>Order placement is not wired yet, so no order can be submitted.</p>
     </div>
   );
 }

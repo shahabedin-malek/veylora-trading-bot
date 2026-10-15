@@ -38,12 +38,15 @@ export type BotConfigurationValidation =
 export type BacktestGateResult = { passed: boolean; reasons: string[] };
 export type BotTransition = { allowed: true; state: BotState } | { allowed: false; reason: string };
 
-export const LIVE_LOCK_REQUIREMENTS = [
-  "One DEX venue, chain, RPC endpoint, and token/contract allow-list must be configured and verified.",
-  "Database migration, persistent risk policy, integer-cent ledger, and append-only audit storage must be applied and verified.",
-  "The order path must be independently reviewed and integrated behind the refusal-only risk gate.",
-  "The user's wallet/signing flow, verified funds, and strategy-specific live approval must be verified.",
-  "A kill switch must be wired to refuse new orders and its behavior verified against persistence.",
+// What the live path still lacks. Each line is a piece of work that is not written yet,
+// not a permission anyone has to grant: ARMED and LIVE reject transitions while this list
+// is non-empty, and the same list is what the bot builder shows.
+export const LIVE_PATH_REQUIREMENTS = [
+  "Live venue, chain, RPC endpoint, and token/contract allow-list: not configured.",
+  "Live order path: not written. The evaluator returns ALLOW or REFUSE and submits nothing.",
+  "Integer-cent ledger and append-only audit: wired for paper accounting only.",
+  "Wallet signing of order intents and a live verified-funds check: not implemented.",
+  "Kill switch: refuses order intents; a live order path still has to honour it.",
 ] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -160,7 +163,7 @@ export function transitionBotState(state: BotState, nextState: BotState, backtes
       : { allowed: false, reason: "A passing full-period backtest is required before paper state." };
   }
   if (nextState === "ARMED" || nextState === "LIVE") {
-    return { allowed: false, reason: LIVE_LOCK_REQUIREMENTS.join(" ") };
+    return { allowed: false, reason: LIVE_PATH_REQUIREMENTS.join(" ") };
   }
   return { allowed: false, reason: `Transition ${state} → ${nextState} is not allowed.` };
 }

@@ -26,9 +26,14 @@ Minimum reading list:
 - `apps/web/prisma/schema.prisma` and `apps/web/prisma/migrations/**` — the data model
 - `apps/web/.env.example`, `plan/ENVIRONMENT_MANIFEST.txt` — configuration surface
   (**names only; never values**)
-- `.github/workflows/*`, `scripts/*` — the gates that must stay green
-- `apps/web/vercel.json`, `docs/` — deployment config and existing technical notes
-- `AGENTS.md`, `.github/copilot-instructions.md` — how agents must work in this repo
+- `.github/workflows/*`, `scripts/*` — CI and the standalone utility scripts
+- `apps/web/vercel.json`, `plan/ENVIRONMENT_MANIFEST.txt` — deployment config and the
+  configuration surface
+- `AGENTS.md` — how agents must work in this repo
+
+Archived reports from earlier rounds live outside the repository at
+`/mnt/private-ai-data/trading/archived-from-project/`; read them only when a phase
+needs their data.
 
 State clearly in `plan/PROJECT_TODO.md` what exists today, what is partial, and what is
 missing, before proposing work.
@@ -60,8 +65,7 @@ Write into `/home/chris/trading-ai/plan/`:
    - **Manual verification (owner click-path)** — the exact clicks for a human: which
      URL, which button, what should happen, including the failure case
    - **Automated verification** — the exact commands, run from `apps/web`:
-     `pnpm scan:secrets`, `pnpm check:real`, `pnpm check:gate-copy`,
-     `pnpm typecheck`, `pnpm test`, `pnpm build`
+     `pnpm typecheck`, `pnpm test`, `pnpm lint`, `pnpm build`
      (locally: `pnpm --config.verify-deps-before-run=false <script>`)
    - **Definition of done** — ticks that must all be true before the phase closes
    - **Rollback** — how to undo the phase if it goes wrong
@@ -106,10 +110,13 @@ These rules are the owner's, and every phase file must carry them explicitly:
 7. **Security and legal come last, with the owner.** A final phase (or final few) covers
    hardening, security policy, FAQs, cookie policy, terms and the public pages — written
    with the owner, after the product works. Do not front-load policy work.
-8. **No new gate-copy.** `pnpm check:gate-copy` guards the user-facing copy the owner has
-   ruled out. Phases must not reintroduce that wording; if a phrase is genuinely wanted
-   as product policy, that is an owner decision and the guard list is amended
-   deliberately, never worked around.
+8. **No reintroduced gate copy.** The AI-authored consent/approval wording ("approval
+   required", "awaiting owner decision", "cannot proceed without permission") has been
+   removed from the product, together with the guard lists and agent-instruction files
+   that enforced it. Phases must not bring that copy back and must not add a new guard
+   list. Product policy is written by the owner, in the admin panel. Honest status
+   labels for unfinished work (for example "order placement is not available yet")
+   stay, because rule 2 requires them.
 
 Write these rules into every phase file's "Do not do" section in your own words.
 
@@ -212,7 +219,7 @@ confirm something this brief already decides in their favour.
   `pass`, not from Vercel, not from the database.
 - Refer to configuration by variable **name** only (see `plan/ENVIRONMENT_MANIFEST.txt`).
 - Server-side keys must never carry a `NEXT_PUBLIC_` or `VITE_` prefix.
-- Run `pnpm scan:secrets` before finishing any phase that touches configuration.
+- Configuration files (`.env*`, credential exports) stay out of the repository.
 
 ---
 

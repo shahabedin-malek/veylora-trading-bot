@@ -166,7 +166,7 @@ async function RiskPolicySummary() {
           <span className="section-state">ORDER ROUTE OFF</span>
         </div>
         <p className="policy-disclaimer" role="status">
-          Risk policy could not be loaded. Trading stays disabled until database connectivity and policy settings are verified.
+          Risk policy could not be loaded from the database, so the order evaluator has no configured limits and refuses every intent until the settings row loads.
         </p>
       </section>
     );
@@ -181,7 +181,7 @@ async function RiskPolicySummary() {
         <span className="section-state">ORDER ROUTE OFF</span>
       </div>
       <p className="policy-disclaimer">
-        Admin policy is loaded and the evaluator fails closed. No order route or approved trading venue is wired, so these settings cannot submit trades.
+        Admin policy is loaded and the evaluator fails closed on any check it cannot resolve. No order route is wired, so these settings cannot submit trades yet.
       </p>
       <dl className="policy-grid">
         <div><dt>MAX RISK / TRADE</dt><dd>{policy.maxRiskPerTradePercent}% of configured capital</dd></div>
@@ -191,16 +191,16 @@ async function RiskPolicySummary() {
         <div><dt>DEFAULT LEVERAGE</dt><dd>{policy.defaultMaxLeverage}×</dd></div>
         <div><dt>MIN VERIFIED BALANCE</dt><dd>${policy.minimumVerifiedBalanceUsd} equivalent</dd></div>
         <div><dt>FIRST 24H EXPOSURE</dt><dd>${policy.first24HourExposureUsd} maximum</dd></div>
-        <div><dt>APPROVED SITE SYMBOLS</dt><dd>{policy.approvedSymbols.length}</dd></div>
-        <div><dt>VERIFIED FUNDS</dt><dd>Required</dd></div>
-        <div><dt>VENUE APPROVAL</dt><dd>Required</dd></div>
-        <div><dt>SYMBOL ACCESS</dt><dd>Per-user allow-list</dd></div>
-        <div><dt>LIVE ARM</dt><dd>Required</dd></div>
-        <div><dt>KILL SWITCH</dt><dd>{policy.killSwitchActive ? "ACTIVE · BLOCKS ORDERS" : "READY"}</dd></div>
-        <div><dt>AUDIT WRITES</dt><dd>Required</dd></div>
+        <div><dt>SITE SYMBOLS</dt><dd>{policy.approvedSymbols.length}</dd></div>
+        <div><dt>VERIFIED FUNDS</dt><dd>Checked on every intent</dd></div>
+        <div><dt>VENUE CHECK</dt><dd>Intent must name a configured venue</dd></div>
+        <div><dt>SYMBOL ACCESS</dt><dd>Per-user allow-list narrows the site list</dd></div>
+        <div><dt>LIVE ARM</dt><dd>Checked on every intent</dd></div>
+        <div><dt>KILL SWITCH</dt><dd>{policy.killSwitchActive ? "ACTIVE · BLOCKS INTENTS" : "READY"}</dd></div>
+        <div><dt>AUDIT WRITES</dt><dd>Checked on every intent</dd></div>
       </dl>
       <p className="policy-note">
-        Every opening requires a valid stop-loss and maximum-loss bound. A daily-loss halt blocks new orders at the configured threshold. The first-day cap applies after arming. These settings do not authorize orders by themselves.
+        Every opening intent is refused without a valid stop-loss and maximum-loss bound. A daily-loss halt blocks new intents at the configured threshold, and the first-day limit applies after arming. These settings configure the evaluator; no order route reads them yet.
       </p>
     </section>
   );

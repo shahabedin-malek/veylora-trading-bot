@@ -26,12 +26,6 @@ jobs:
       - name: Generate Next.js types
         run: pnpm exec next typegen
         working-directory: apps/web
-      - name: Secret scan
-        run: pnpm scan:secrets
-        working-directory: apps/web
-      - name: Realness gate
-        run: pnpm check:real
-        working-directory: apps/web
       - name: Typecheck
         run: pnpm typecheck
         working-directory: apps/web

@@ -150,9 +150,9 @@ export function WunderTradingDesk({ settings }: { settings: WunderTradingFeature
 
       <div id="wundertrading-read-panel" role="tabpanel" aria-labelledby={`wundertrading-tab-${view}`}>
         {!settings ? (
-          <div className="market-chart-empty" role="status"><strong>Feature settings unavailable</strong><span>WunderTrading reads remain disabled until settings storage is available.</span></div>
+          <div className="market-chart-empty" role="status"><strong>Feature settings unavailable</strong><span>The settings row did not load, so the switches for these reads are unknown.</span></div>
         ) : !settings[selectedOption.setting] ? (
-          <div className="market-chart-empty" role="status"><strong>{selectedOption.label} disabled</strong><span>An administrator has disabled this read function.</span></div>
+          <div className="market-chart-empty" role="status"><strong>{selectedOption.label} switched off</strong><span>Off in Access &amp; Integrations → WunderTrading feature switches. Turn it on there and this read becomes available.</span></div>
         ) : loadingCredentials ? (
           <div className="market-chart-empty" role="status"><strong>Loading your keys</strong></div>
         ) : credentials.length === 0 ? (
@@ -167,9 +167,9 @@ export function WunderTradingDesk({ settings }: { settings: WunderTradingFeature
       </div>
 
       <div className="wundertrading-order-status" aria-label="Trading action status">
-        <div><strong>MARKET ENTER</strong><span>{settings?.openTradesEnabled ? "ADMIN SWITCH ON · EXECUTION ENGINE LOCKED" : "DISABLED BY ADMIN"}</span></div>
-        <div><strong>MARKET CLOSE</strong><span>{settings?.closeTradesEnabled ? "ADMIN SWITCH ON · EXECUTION ENGINE LOCKED" : "DISABLED BY ADMIN"}</span></div>
-        <p>Order actions are not callable while Veylora’s live risk, step-up, and execution gates are incomplete. Enabling a switch alone cannot send an order. Withdrawals are unsupported.</p>
+        <div><strong>MARKET ENTER</strong><span>{settings?.openTradesEnabled ? "SWITCH ON · NO ORDER CALL" : "OFF IN ADMIN"}</span></div>
+        <div><strong>MARKET CLOSE</strong><span>{settings?.closeTradesEnabled ? "SWITCH ON · NO ORDER CALL" : "OFF IN ADMIN"}</span></div>
+        <p>These switches control the reads on this page. Veylora has no order or withdrawal call to WunderTrading, so no switch here can move funds.</p>
       </div>
     </div>
   );

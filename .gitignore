@@ -17,9 +17,6 @@
 *api_key*
 *api-key*
 *token*.txt
-!/.secretlintrc.json
-!/.secretlintignore
-!/scripts/scan_secrets.mjs
 cdp_api_key.json
 cdp_wallet_secret.txt
 Alchemy.txt
@@ -41,9 +38,6 @@ pg_service.conf
 *.dump
 *.sqlite-wal
 *.sqlite-shm
-/docs/last_try_secret_batches/
-/docs/LAST_TRY_SECRET_FINDINGS.md
-/docs/LTS_BATCH_*.md
 
 # Reference corpora/source trees are not staged into the rebuild
 /last-try

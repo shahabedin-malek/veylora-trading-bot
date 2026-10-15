@@ -90,7 +90,7 @@ export function WunderTradingSettingsForm({
           {error && <span className="login-error" role="alert">{error}</span>}
         </div>
       </form>
-      <p className="chaingpt-admin-disclosure">All functions default off. These controls do not grant per-key trading approval or override Veylora’s live-order, risk, or authentication gates. Withdrawals are not supported.</p>
+      <p className="chaingpt-admin-disclosure">Each switch turns one WunderTrading read function on or off. No switch here places an order: Veylora calls only the read endpoints, and the keys stay encrypted at rest.</p>
     </>
   );
 }

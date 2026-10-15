@@ -50,7 +50,7 @@ async function ChainGPTContent() {
         ) : enabledFeatures.length === 0 ? (
           <div className="market-chart-empty" role="status">
             <strong>No ChainGPT links enabled</strong>
-            <span>An administrator can enable hosted tools from Access settings.</span>
+            <span>Turn hosted tools on in Access settings to list them here.</span>
           </div>
         ) : (
           <ul className="chaingpt-feature-list">

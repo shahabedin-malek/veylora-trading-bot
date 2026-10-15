@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { LockKeyhole, Play, Plus, Skull } from "lucide-react";
 import {
   evaluateBacktestGate,
-  LIVE_LOCK_REQUIREMENTS,
+  LIVE_PATH_REQUIREMENTS,
   transitionBotState,
   validateBotConfiguration,
   type BacktestGateResult,
@@ -416,8 +416,7 @@ export function BotBuilderPanel() {
                   {bot.state === "DRAFT" && <button disabled={!bot.backtestGate?.passed || busyId === bot.id} onClick={() => void transition(bot, "PAPER")} type="button">{busyId === bot.id ? "VERIFYING PAPER GATE" : "START PAPER MODE"}</button>}
                   {bot.state === "PAPER" && <button disabled={busyId === bot.id} onClick={() => void runPaperCycle(bot)} type="button"><Play aria-hidden="true" size={14} />{busyId === bot.id ? "RUNNING PAPER CHECK" : "RUN PAPER CHECK"}</button>}
                   {bot.state !== "KILLED" && <button className="bot-kill-button" disabled={busyId === bot.id} onClick={() => void transition(bot, "KILLED")} type="button"><Skull aria-hidden="true" size={14} />KILL PAPER BOT</button>}
-                  <button disabled title={LIVE_LOCK_REQUIREMENTS.join(" ")} type="button"><LockKeyhole aria-hidden="true" size={14} />ARMED · LOCKED</button>
-                  <button disabled title={LIVE_LOCK_REQUIREMENTS.join(" ")} type="button"><LockKeyhole aria-hidden="true" size={14} />LIVE · LOCKED</button>
+                  <span className="bot-live-state"><LockKeyhole aria-hidden="true" size={14} />ARMED / LIVE ARE NOT WIRED YET</span>
                 </div>
                 {bot.backtest && (
                   <div className="bot-backtest-summary" role="status">
@@ -451,7 +450,7 @@ export function BotBuilderPanel() {
                   </div>
                 )}
                 {(bot.state === "ARMED" || bot.state === "LIVE") && (
-                  <ul className="bot-live-lock-list">{LIVE_LOCK_REQUIREMENTS.map((item) => <li key={item}>{item}</li>)}</ul>
+                  <ul className="bot-live-lock-list">{LIVE_PATH_REQUIREMENTS.map((item) => <li key={item}>{item}</li>)}</ul>
                 )}
               </article>
             ))}

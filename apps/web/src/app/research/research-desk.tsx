@@ -145,7 +145,7 @@ export function ResearchDesk({ settings }: { settings: IntegrationFeatureSetting
       {!settings ? (
         <div className="market-chart-empty" role="status"><strong>Integration settings unavailable</strong><span>Research functions remain off until settings storage is available.</span></div>
       ) : !modeEnabled ? (
-        <div className="market-chart-empty" role="status"><strong>{mode === "search" ? "Search" : "Extract"} is off</strong><span>An administrator must enable this function in Access &amp; Integrations.</span></div>
+        <div className="market-chart-empty" role="status"><strong>{mode === "search" ? "Search" : "Extract"} is off</strong><span>Turn it on in Access &amp; Integrations to use it here.</span></div>
       ) : error ? (
         <div className="market-chart-empty" role="alert"><strong>Request failed</strong><span>{error}</span></div>
       ) : notice ? (

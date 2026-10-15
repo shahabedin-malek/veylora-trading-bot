@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
         });
         return { protectedOwner: false as const, role: assignment.role };
       });
-      if (result.protectedOwner) return json({ error: "The initial OWNER role cannot be reassigned here." }, 403);
+      if (result.protectedOwner) return json({ error: "The owner role follows the configured owner address; this endpoint assigns the other global roles." }, 403);
       return json(result);
     }
 

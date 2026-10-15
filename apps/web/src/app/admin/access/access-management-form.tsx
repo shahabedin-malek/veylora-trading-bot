@@ -95,7 +95,7 @@ export function AccessManagementForm({ initialDirectory }: { initialDirectory: A
           </div>
           <span className="section-state">{directory.users.length} ACCOUNTS</span>
         </div>
-        <p className="admin-data-note">The owner role is granted only by the configured address completing SIWE and cannot be assigned or demoted here. Other wallets must sign in once before receiving a role.</p>
+        <p className="admin-data-note">The owner role comes from the configured owner address completing SIWE, so it is not listed as an assignable role here. This form assigns the other global roles; a wallet appears once it has signed in.</p>
         <form className="access-inline-form" onSubmit={(event) => submit(event, { action: "assign-role", address: roleAddress, role })}>
           <label className="risk-policy-field" htmlFor="access-role-address">
             <span>MAINNET WALLET ADDRESS</span>

@@ -15,8 +15,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "docs/LAST_TRY_TREE.txt.gz"
-OUTPUT_DIR = ROOT / "docs/last_try_secret_batches"
+# Manifests and batch reports live beside the reference trees; an in-repo docs/ is
+# preferred if one exists.
+EXTERNAL_DATA = Path(os.environ.get("VEYLORA_EXTERNAL_DATA", "/mnt/private-ai-data/trading"))
+_DOCS_CANDIDATES = (EXTERNAL_DATA / "archived-from-project" / "docs", ROOT / "docs")
+DOCS = next((path for path in _DOCS_CANDIDATES if path.is_dir()), _DOCS_CANDIDATES[0])
+MANIFEST = DOCS / "LAST_TRY_TREE.txt.gz"
+OUTPUT_DIR = DOCS / "last_try_secret_batches"
 CHUNK = 256 * 1024
 MAX_BYTES = 64 * 1024 * 1024
 
@@ -41,6 +46,11 @@ SERVICE_MARKS = {
     "PostgreSQL/database": (b"postgres", b"database_url", b"pg_service"),
     "RPC provider": (b"rpc_url", b"quicknode", b"infura"),
 }
+
+
+def show(path: Path) -> str:
+    """Path for messages: relative inside the project, absolute outside it."""
+    return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
 
 
 def get_paths(start: int, count: int) -> list[str]:
@@ -111,7 +121,7 @@ def main() -> int:
     batch_id = f"{args.start:06d}_{args.start + args.count:06d}"
     out = OUTPUT_DIR / f"batch_{batch_id}.md"
     if out.exists():
-        print(f"already complete: {out.relative_to(ROOT)}")
+        print(f"already complete: {show(out)}")
         return 0
     rows = []
     totals = {"scanned": 0, "candidate": 0, "missing": 0, "unreadable": 0, "oversize_skipped": 0}
@@ -135,7 +145,7 @@ def main() -> int:
         lines.append(f"| `{rel}` | {', '.join(categories)} | {', '.join(services) if services else 'not inferred'} |")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"wrote {out.relative_to(ROOT)}; scanned={totals['scanned']}, candidates={totals['candidate']}, skipped={totals['oversize_skipped']}, errors={totals['missing']+totals['unreadable']}")
+    print(f"wrote {show(out)}; scanned={totals['scanned']}, candidates={totals['candidate']}, skipped={totals['oversize_skipped']}, errors={totals['missing']+totals['unreadable']}")
     return 1 if totals["missing"] or totals["unreadable"] else 0
 
 

@@ -52,7 +52,7 @@ async function AdminRiskContent() {
           <RiskPolicyForm initialSettings={{ ...settings, approvedSymbols: [...settings.approvedSymbols] }} />
         ) : (
           <p className="policy-disclaimer" role="status">
-            Risk policy could not be loaded. Trading stays disabled until database connectivity and policy settings are verified.
+            Risk policy could not be loaded from the database. The order evaluator has no configured limits until the settings row loads, and refuses every intent in the meantime.
           </p>
         )}
       </section>

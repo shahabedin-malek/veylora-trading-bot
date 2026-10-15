@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
   const view = viewValue as WunderTradingView;
   const settings = await getWunderTradingFeatureSettings().catch(() => null);
   if (!settings) return json({ error: "WunderTrading settings are unavailable." }, 503);
-  if (!settings[VIEW_SETTINGS[view]]) return json({ error: "This WunderTrading read function is disabled by the administrator." }, 403);
+  if (!settings[VIEW_SETTINGS[view]]) return json({ error: "This WunderTrading read function is switched off in Access & Integrations." }, 403);
 
   const credential = await prisma.tradingVenueCredential.findFirst({
     where: { id: credentialId, userId: user.id, venue: "wundertrading", revokedAt: null },

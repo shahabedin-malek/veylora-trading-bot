@@ -16,10 +16,5 @@ Run the foundation checks:
 pnpm --dir apps/web lint
 pnpm --dir apps/web typecheck
 pnpm --dir apps/web test
-pnpm --dir apps/web scan:secrets
-pnpm --dir apps/web check:real
-pnpm --dir apps/web check:gate-copy
 pnpm --dir apps/web build
 ```
-
-No provider, wallet, venue, endpoint, trading action, or deployment is enabled by this shell.

@@ -4,7 +4,7 @@ import { isExactObject, isPaperRuntimeAvailable, isPaperSessionId, isSameOriginP
 import { paperTradingStore, usdToIntegerCents } from "@/lib/paper-trading/store";
 
 export async function GET(request: Request) {
-  if (!isPaperRuntimeAvailable()) return paperJson({ error: "PAPER store is process-local and is disabled in production." }, 503);
+  if (!isPaperRuntimeAvailable()) return paperJson({ error: "The PAPER store is process-local, so it is not available on this deployment." }, 503);
   const paperSessionId = new URL(request.url).searchParams.get("paperSessionId");
   if (!isPaperSessionId(paperSessionId)) return paperJson({ error: "A valid paper session is required." }, 400);
   const bots = await paperTradingStore.listPaperBots(paperSessionId);
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!isPaperRuntimeAvailable()) return paperJson({ error: "PAPER store is process-local and is disabled in production." }, 503);
+  if (!isPaperRuntimeAvailable()) return paperJson({ error: "The PAPER store is process-local, so it is not available on this deployment." }, 503);
   if (!isSameOriginPaperWrite(request)) return paperJson({ error: "Paper writes must be same-origin." }, 403);
   const parsed = await readPaperJson(request);
   if ("response" in parsed) return parsed.response;

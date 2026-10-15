@@ -1,7 +1,6 @@
 import DecimalJS from "decimal.js";
 import { prisma } from "@/lib/db";
 import {
-  DEFAULT_RISK_POLICY,
   evaluateRiskOrder,
   RISK_POLICY_VERSION,
   type AdjustableRiskPolicy,
@@ -22,10 +21,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function boundedDecimal(value: unknown, minimum: string, maximum?: string): value is string {
+function decimalAtLeast(value: unknown, minimum: string): value is string {
   if (typeof value !== "string" || !/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) return false;
   const parsed = new Decimal(value);
-  return parsed.isFinite() && parsed.greaterThanOrEqualTo(minimum) && (!maximum || parsed.lessThanOrEqualTo(maximum));
+  return parsed.isFinite() && parsed.greaterThanOrEqualTo(minimum);
+}
+
+// Ratios are validated for form only (a plain positive decimal). How tight the owner
+// sets them is configuration, not something this module decides: the admin panel is
+// the control, the evaluator is the enforcement, and every change is audited.
+function positiveDecimal(value: unknown): value is string {
+  return decimalAtLeast(value, "0") && new Decimal(value).greaterThan(0);
 }
 
 export function validateRiskPolicyUpdate(value: unknown): RiskPolicyValidation {
@@ -43,29 +49,29 @@ export function validateRiskPolicyUpdate(value: unknown): RiskPolicyValidation {
     "killSwitchActive",
   ]);
   if (Object.keys(value).some((key) => !allowedKeys.has(key))) {
-    return { valid: false, error: "One or more submitted fields are locked or unsupported." };
+    return { valid: false, error: "One or more submitted fields are unsupported." };
   }
 
-  if (!boundedDecimal(value.maxRiskPerTradePercent, "0.01", DEFAULT_RISK_POLICY.maxRiskPerTradePercent)) {
-    return { valid: false, error: "Per-trade risk must be between 0.01% and the 1% approved cap." };
+  if (!positiveDecimal(value.maxRiskPerTradePercent)) {
+    return { valid: false, error: "Per-trade risk must be a positive percentage of configured capital." };
   }
-  if (!boundedDecimal(value.maxOpenExposurePercent, "0.1", DEFAULT_RISK_POLICY.maxOpenExposurePercent)) {
-    return { valid: false, error: "Open exposure must be between 0.1% and the 25% approved cap." };
+  if (!positiveDecimal(value.maxOpenExposurePercent)) {
+    return { valid: false, error: "Open exposure must be a positive percentage of configured capital." };
   }
-  if (!boundedDecimal(value.dailyLossHaltPercent, "0.1", DEFAULT_RISK_POLICY.dailyLossHaltPercent)) {
-    return { valid: false, error: "Daily-loss halt must be between 0.1% and the 2% approved cap." };
+  if (!positiveDecimal(value.dailyLossHaltPercent)) {
+    return { valid: false, error: "Daily-loss halt must be a positive percentage of configured capital." };
   }
-  if (typeof value.maxTradesPerDay !== "number" || !Number.isSafeInteger(value.maxTradesPerDay) || value.maxTradesPerDay < 1 || value.maxTradesPerDay > DEFAULT_RISK_POLICY.maxTradesPerDay) {
-    return { valid: false, error: "Trades per day must be between 1 and the 10-trade approved cap." };
+  if (typeof value.maxTradesPerDay !== "number" || !Number.isSafeInteger(value.maxTradesPerDay) || value.maxTradesPerDay < 1) {
+    return { valid: false, error: "Trades per day must be a whole number of at least 1." };
   }
-  if (!boundedDecimal(value.defaultMaxLeverage, "0.1", DEFAULT_RISK_POLICY.defaultMaxLeverage)) {
-    return { valid: false, error: "Leverage must be between 0.1× and the approved 1× cap." };
+  if (!positiveDecimal(value.defaultMaxLeverage)) {
+    return { valid: false, error: "Leverage must be a positive multiplier." };
   }
-  if (!boundedDecimal(value.minimumVerifiedBalanceUsd, DEFAULT_RISK_POLICY.minimumVerifiedBalanceUsd)) {
-    return { valid: false, error: "Minimum verified balance cannot be lower than USD 20." };
+  if (!decimalAtLeast(value.minimumVerifiedBalanceUsd, "0")) {
+    return { valid: false, error: "Minimum verified balance must be a non-negative USD amount." };
   }
-  if (!boundedDecimal(value.first24HourExposureUsd, "0", DEFAULT_RISK_POLICY.first24HourExposureUsd)) {
-    return { valid: false, error: "First-day exposure cannot exceed the approved USD 20 cap." };
+  if (!decimalAtLeast(value.first24HourExposureUsd, "0")) {
+    return { valid: false, error: "First-day exposure must be a non-negative USD amount." };
   }
   if (!Array.isArray(value.approvedSymbols) || value.approvedSymbols.length > 100) {
     return { valid: false, error: "Approved symbols must be a list of at most 100 product IDs." };

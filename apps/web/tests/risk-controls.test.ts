@@ -33,16 +33,16 @@ function approvedOrder(overrides: Partial<RiskOrderInput> = {}): RiskOrderInput 
   };
 }
 
-test("risk control module reports loaded policy while execution remains disabled", () => {
+test("risk control module reports the loaded policy and the unwired order route", () => {
   const status = getRiskControlsStatus(approvedPolicy);
   assert.equal(status.status, "Connected");
-  assert.match(status.detail, /Admin policy loaded · 1 site symbols · kill switch ready · order execution disabled/);
+  assert.match(status.detail, /Admin policy loaded · 1 site symbols · kill switch ready · no order route configured/);
   assert.equal(status.executionEnabled, false);
   assert.equal(status.policyVersion, "veylora-risk-v1");
 });
 
-test("admin risk settings can tighten caps, edit symbols, and engage the kill switch", () => {
-  const result = validateRiskPolicyUpdate({
+test("admin risk settings accept both tighter and looser values, because the panel is the control", () => {
+  const tightened = validateRiskPolicyUpdate({
     ...DEFAULT_RISK_POLICY,
     maxRiskPerTradePercent: "0.5",
     maxOpenExposurePercent: "20",
@@ -50,37 +50,56 @@ test("admin risk settings can tighten caps, edit symbols, and engage the kill sw
     killSwitchActive: true,
   });
 
-  assert.equal(result.valid, true);
-  if (!result.valid) return;
-  assert.equal(result.value.maxRiskPerTradePercent, "0.5");
-  assert.deepEqual(result.value.approvedSymbols, ["BTC-USD", "ETH-USD"]);
-  assert.equal(result.value.killSwitchActive, true);
+  assert.equal(tightened.valid, true);
+  if (!tightened.valid) return;
+  assert.equal(tightened.value.maxRiskPerTradePercent, "0.5");
+  assert.deepEqual(tightened.value.approvedSymbols, ["BTC-USD", "ETH-USD"]);
+  assert.equal(tightened.value.killSwitchActive, true);
+
+  const loosened = validateRiskPolicyUpdate({
+    ...DEFAULT_RISK_POLICY,
+    maxRiskPerTradePercent: "5",
+    maxOpenExposurePercent: "40",
+    dailyLossHaltPercent: "8",
+    maxTradesPerDay: 200,
+    defaultMaxLeverage: "3",
+    minimumVerifiedBalanceUsd: "1",
+    first24HourExposureUsd: "5000",
+    approvedSymbols: ["BTC-USD"],
+    killSwitchActive: false,
+  });
+
+  assert.equal(loosened.valid, true);
+  if (!loosened.valid) return;
+  assert.equal(loosened.value.maxRiskPerTradePercent, "5");
+  assert.equal(loosened.value.maxOpenExposurePercent, "40");
+  assert.equal(loosened.value.dailyLossHaltPercent, "8");
+  assert.equal(loosened.value.maxTradesPerDay, 200);
+  assert.equal(loosened.value.defaultMaxLeverage, "3");
+  assert.equal(loosened.value.minimumVerifiedBalanceUsd, "1");
+  assert.equal(loosened.value.first24HourExposureUsd, "5000");
 });
 
-test("admin risk settings reject looser caps, unsupported fields, and malformed symbols", () => {
-  assert.equal(validateRiskPolicyUpdate({
-    ...DEFAULT_RISK_POLICY,
-    approvedSymbols: [],
-    killSwitchActive: false,
-    maxRiskPerTradePercent: "1.01",
-  }).valid, false);
-  assert.equal(validateRiskPolicyUpdate({
-    ...DEFAULT_RISK_POLICY,
-    approvedSymbols: [],
-    killSwitchActive: false,
-    minimumVerifiedBalanceUsd: "19.99",
-  }).valid, false);
-  assert.equal(validateRiskPolicyUpdate({
-    ...DEFAULT_RISK_POLICY,
-    approvedSymbols: ["btc-usd"],
-    killSwitchActive: false,
-  }).valid, false);
-  assert.equal(validateRiskPolicyUpdate({
-    ...DEFAULT_RISK_POLICY,
-    approvedSymbols: [],
-    killSwitchActive: false,
-    maxLeverageOverride: "1",
-  }).valid, false);
+test("admin risk settings reject malformed values, unsupported fields and bad symbols", () => {
+  const rejected = (overrides: Record<string, unknown>) =>
+    validateRiskPolicyUpdate({ ...DEFAULT_RISK_POLICY, approvedSymbols: [], killSwitchActive: false, ...overrides });
+
+  const negative = rejected({ maxRiskPerTradePercent: "-1" });
+  assert.equal(negative.valid, false);
+  if (!negative.valid) assert.match(negative.error, /positive percentage/);
+
+  const zero = rejected({ defaultMaxLeverage: "0" });
+  assert.equal(zero.valid, false);
+  if (!zero.valid) assert.match(zero.error, /positive multiplier/);
+
+  assert.equal(rejected({ maxRiskPerTradePercent: "abc" }).valid, false);
+  assert.equal(rejected({ maxTradesPerDay: 0 }).valid, false);
+  assert.equal(rejected({ maxTradesPerDay: 1.5 }).valid, false);
+  assert.equal(rejected({ minimumVerifiedBalanceUsd: "-0.01" }).valid, false);
+  assert.equal(rejected({ first24HourExposureUsd: "1e6" }).valid, false);
+  assert.equal(rejected({ approvedSymbols: ["btc-usd"] }).valid, false);
+  assert.equal(rejected({ killSwitchActive: "yes" }).valid, false);
+  assert.equal(rejected({ maxLeverageOverride: "1" }).valid, false);
 });
 
 test("risk evaluator allows only a fully approved order within configured limits", () => {

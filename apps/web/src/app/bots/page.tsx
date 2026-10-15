@@ -11,9 +11,9 @@ export default function BotsPage() {
         <div className="page-heading__copy">
           <div className="eyebrow"><span className="eyebrow-line" aria-hidden="true" />STRATEGY LAB <span className="eyebrow-separator">/</span> NO-CODE BUILDER</div>
           <h1 id="bots-page-title"><DepthText text="Bot builder" /></h1>
-          <p>Configure, backtest, and monitor paper RSI strategies at Coinbase public prices. Live execution remains disabled.</p>
+          <p>Configure, backtest, and monitor paper RSI strategies at Coinbase public prices. Paper accounting runs server-side; nothing on this page places a live order.</p>
         </div>
-        <span className="section-state">NO LIVE EXECUTION</span>
+        <span className="section-state">PAPER ONLY</span>
       </section>
       <BotBuilderPanel />
     </TerminalShell>

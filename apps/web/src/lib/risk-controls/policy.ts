@@ -97,7 +97,7 @@ function amount(value: string | null): InstanceType<typeof Decimal> | null {
 export function getRiskControlsStatus(policy: AdjustableRiskPolicy) {
   return {
     status: "Connected",
-    detail: `Admin policy loaded · ${policy.approvedSymbols.length} site symbols · ${policy.killSwitchActive ? "kill switch active" : "kill switch ready"} · order execution disabled`,
+    detail: `Admin policy loaded · ${policy.approvedSymbols.length} site symbols · ${policy.killSwitchActive ? "kill switch active" : "kill switch ready"} · no order route configured`,
     executionEnabled: false,
     policyVersion: RISK_POLICY_VERSION,
   } as const;

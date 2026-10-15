@@ -46,7 +46,7 @@ export async function POST(
   if (credential.venue === "wundertrading") {
     const settings = await getWunderTradingFeatureSettings().catch(() => null);
     if (!settings) return json({ error: "WunderTrading settings are unavailable." }, 503);
-    if (!settings.apiProfilesEnabled) return json({ error: "WunderTrading profile access is disabled by the administrator." }, 403);
+    if (!settings.apiProfilesEnabled) return json({ error: "WunderTrading profile access is switched off in Access & Integrations." }, 403);
 
     try {
       const profiles = await listWunderTradingApiProfiles(

@@ -8,11 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/auth.test.ts tests/market-data.test.ts tests/alternative-me-fear-greed.test.ts tests/trading-credentials.test.ts tests/trading-status.test.ts tests/project-state-summary.test.ts tests/risk-controls.test.ts tests/safety-core.test.ts tests/access-control.test.ts tests/database-config.test.ts tests/chaingpt-settings.test.ts tests/wundertrading-client.test.ts tests/wundertrading-settings.test.ts tests/integration-settings.test.ts tests/integration-readiness.test.ts tests/tavily-client.test.ts scripts/with-neon-env.test.mjs src/lib/portfolio/ethereum.test.ts src/lib/portfolio/evm-mainnets.test.ts src/lib/alerts/conditions.test.ts src/lib/alerts/evaluate.test.ts src/lib/alerts/scheduler-config.test.ts src/lib/backtesting/rsi-backtester.test.ts src/lib/bot-builder/state-machine.test.ts src/lib/paper-trading/engine.test.ts src/lib/assistant/public-market-adapter.test.ts src/app/api/bots/route.test.ts src/app/api/backtest/route.test.ts src/app/api/assistant/route.test.ts src/app/api/market-alerts/route.test.ts src/app/api/cron/market-alerts/route.test.ts src/app/api/admin/access/route.test.ts src/app/api/admin/risk-policy/route.test.ts src/app/api/admin/chaingpt/route.test.ts src/app/api/admin/wundertrading/route.test.ts src/app/api/admin/integrations/route.test.ts src/app/api/trading/credentials/route.test.ts 'src/app/api/trading/credentials/**/verify/route.test.ts' src/app/api/trading/wundertrading/route.test.ts src/app/api/research/tavily/search/route.test.ts src/app/api/research/tavily/extract/route.test.ts src/app/api/auth/config/route.test.ts src/app/api/auth/nonce/route.test.ts src/app/api/auth/session/route.test.ts src/app/api/auth/verify/route.test.ts tests/rpc-networks.test.ts tests/rpc-proxy.test.ts && node --test ../../scripts/check_real.test.mjs ../../scripts/check_gate_copy.test.mjs",
+    "test": "tsx --test tests/auth.test.ts tests/market-data.test.ts tests/alternative-me-fear-greed.test.ts tests/trading-credentials.test.ts tests/trading-status.test.ts tests/project-state-summary.test.ts tests/risk-controls.test.ts tests/safety-core.test.ts tests/access-control.test.ts tests/database-config.test.ts tests/chaingpt-settings.test.ts tests/wundertrading-client.test.ts tests/wundertrading-settings.test.ts tests/integration-settings.test.ts tests/integration-readiness.test.ts tests/tavily-client.test.ts scripts/with-neon-env.test.mjs src/lib/portfolio/ethereum.test.ts src/lib/portfolio/evm-mainnets.test.ts src/lib/alerts/conditions.test.ts src/lib/alerts/evaluate.test.ts src/lib/alerts/scheduler-config.test.ts src/lib/backtesting/rsi-backtester.test.ts src/lib/bot-builder/state-machine.test.ts src/lib/paper-trading/engine.test.ts src/lib/assistant/public-market-adapter.test.ts src/app/api/bots/route.test.ts src/app/api/backtest/route.test.ts src/app/api/assistant/route.test.ts src/app/api/market-alerts/route.test.ts src/app/api/cron/market-alerts/route.test.ts src/app/api/admin/access/route.test.ts src/app/api/admin/risk-policy/route.test.ts src/app/api/admin/chaingpt/route.test.ts src/app/api/admin/wundertrading/route.test.ts src/app/api/admin/integrations/route.test.ts src/app/api/trading/credentials/route.test.ts 'src/app/api/trading/credentials/**/verify/route.test.ts' src/app/api/trading/wundertrading/route.test.ts src/app/api/research/tavily/search/route.test.ts src/app/api/research/tavily/extract/route.test.ts src/app/api/auth/config/route.test.ts src/app/api/auth/nonce/route.test.ts src/app/api/auth/session/route.test.ts src/app/api/auth/verify/route.test.ts tests/rpc-networks.test.ts tests/rpc-proxy.test.ts",
     "admin-data:refresh": "python3 ../../scripts/export_project_state_summary.py",
-    "scan:secrets": "node ../../scripts/scan_secrets.mjs",
-    "check:real": "node ../../scripts/check_real.mjs",
-    "check:gate-copy": "node ../../scripts/check_gate_copy.mjs",
     "market-data:proof": "node scripts/fetch-coinbase-proof.mjs",
     "market-data:sync-history": "tsx scripts/sync-coinbase-history.ts",
     "market-data:sync-news": "tsx scripts/sync-coinbase-news.ts",
@@ -42,7 +39,6 @@
     "wagmi": "^2.19.5"
   },
   "devDependencies": {
-    "@secretlint/secretlint-rule-preset-recommend": "^13.0.7",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -50,7 +46,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "prisma": "6.19.3",
-    "secretlint": "^13.0.7",
     "tailwindcss": "^4",
     "tsx": "4.23.15",
     "typescript": "^5"

@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Veylora | Trading Console",
-  description: "Real-data trading console. Connections and execution remain disabled until approved.",
+  description: "Real-data trading console: wallet sign-in, market data, portfolio reads, paper strategies and an admin-configured risk policy.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

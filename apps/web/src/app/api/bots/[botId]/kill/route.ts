@@ -3,7 +3,7 @@ import { isExactObject, isPaperRuntimeAvailable, isPaperSessionId, isSameOriginP
 import { paperTradingStore } from "@/lib/paper-trading/store";
 
 export async function POST(request: Request, { params }: RouteContext<"/api/bots/[botId]/kill">) {
-  if (!isPaperRuntimeAvailable()) return paperJson({ error: "PAPER store is process-local and is disabled in production." }, 503);
+  if (!isPaperRuntimeAvailable()) return paperJson({ error: "The PAPER store is process-local, so it is not available on this deployment." }, 503);
   if (!isSameOriginPaperWrite(request)) return paperJson({ error: "Paper writes must be same-origin." }, 403);
   const { botId } = await params;
   const parsed = await readPaperJson(request);

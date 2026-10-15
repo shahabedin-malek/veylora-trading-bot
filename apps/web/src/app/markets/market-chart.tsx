@@ -127,7 +127,7 @@ export function MarketChart({ candles, productId }: { candles: readonly ChartCan
     return (
       <div className="market-chart-empty" role="status">
         <strong>No verified candle history</strong>
-        <span>{productId} historical candles remain unavailable until the approved source returns data.</span>
+        <span>{productId} historical candles are not shown here because the configured source returned none.</span>
       </div>
     );
   }
