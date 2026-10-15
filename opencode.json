@@ -1,0 +1,52 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "ollama-win": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Windows Ollama",
+      "options": {
+        "baseURL": "http://192.168.15.92:11434/v1"
+      },
+      "models": {
+        "qwen3.5:9b": {
+          "name": "Qwen3.5 9B (fast, general)",
+          "limit": { "context": 32768, "output": 4096 }
+        },
+        "qwen3-coder-30b-32k": {
+          "name": "Qwen3-Coder 30B-A3B MoE 32K (WARNING: 14 GB, wedges this 16 GB host - avoid)",
+          "limit": { "context": 32768, "output": 4096 }
+        },
+        "qwen2.5-coder-7b": {
+          "name": "Qwen2.5-Coder 7B 32K (DEFAULT - non-thinking, runs 100% on GPU)",
+          "limit": { "context": 32768, "output": 4096 }
+        },
+        "ornith-9b-32k": {
+          "name": "Ornith 1.5 9B 32K (general)",
+          "limit": { "context": 32768, "output": 4096 }
+        },
+        "qwen3.8-uncensored-32k": {
+          "name": "Qwen3.8 27B Uncensored IQ2_M 32K (slow, uncensored)",
+          "limit": { "context": 32768, "output": 4096 }
+        }
+      }
+    }
+  },
+  "model": "ollama-win/qwen2.5-coder-7b",
+  "command": {
+    "qwen-long": {
+      "description": "Qwen3.8 27B Uncensored, 32K context. Slowest (3.3 tok/s) but uncensored. Needs an active privateai session on the Windows worker.",
+      "template": "$ARGUMENTS",
+      "model": "ollama-win/qwen3.8-uncensored-32k"
+    },
+    "qwen-coder": {
+      "description": "Qwen3-Coder 30B-A3B MoE, 32K context. Best speed/quality balance on the Windows worker (~4.4 tok/s).",
+      "template": "$ARGUMENTS",
+      "model": "ollama-win/qwen3-coder-30b-32k"
+    },
+    "qwen-light": {
+      "description": "Qwen2.5-Coder 7B, 32K context. Smallest and fastest; good for quick edits.",
+      "template": "$ARGUMENTS",
+      "model": "ollama-win/qwen2.5-coder-7b"
+    }
+  }
+}

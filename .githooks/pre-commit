@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+pnpm --dir apps/web scan:secrets
+pnpm --dir apps/web check:real

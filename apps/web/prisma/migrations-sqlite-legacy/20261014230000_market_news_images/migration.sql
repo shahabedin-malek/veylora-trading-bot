@@ -1,0 +1,1 @@
+ALTER TABLE "MarketNewsRecord" ADD COLUMN "imageUrl" TEXT;

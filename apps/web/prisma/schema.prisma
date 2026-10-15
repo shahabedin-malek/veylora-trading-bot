@@ -1,0 +1,338 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+model User {
+  id             String           @id @default(cuid())
+  status         String           @default("ACTIVE")
+  sessionVersion Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  walletIdentity WalletIdentity[]
+  evmTokenAllowlistEntries EvmTokenAllowlistEntry[]
+  evmPortfolioNetworks EvmPortfolioNetwork[]
+  marketAlerts MarketAlert[]
+  marketAlertEvents MarketAlertEvent[] @relation("MarketAlertEventActor")
+  venueCredentials TradingVenueCredential[]
+  tradeOrders    TradeOrder[]
+  roles          RoleAssignment[]
+  auditEvents    AuditEvent[]
+  riskPolicyUpdates RiskPolicySettings[] @relation("RiskPolicyUpdatedBy")
+  createdTeams DepartmentTeam[] @relation("TeamCreatedBy")
+  teamMemberships TeamMembership[] @relation("TeamMemberUser")
+  assignedTeamMemberships TeamMembership[] @relation("TeamMemberAssignedBy")
+  permissionGrants UserPermissionGrant[] @relation("PermissionUser")
+  grantedPermissions UserPermissionGrant[] @relation("PermissionGrantedBy")
+  chainGptFeatureSettingsUpdates ChainGPTFeatureSettings[] @relation("ChainGPTSettingsUpdatedBy")
+  wunderTradingFeatureSettingsUpdates WunderTradingFeatureSettings[] @relation("WunderTradingSettingsUpdatedBy")
+  integrationFeatureSettingsUpdates IntegrationFeatureSettings[] @relation("IntegrationSettingsUpdatedBy")
+}
+
+model WalletIdentity {
+  id                String   @id @default(cuid())
+  userId            String
+  chainNamespace    String
+  chainReference    String
+  addressCanonical  String
+  addressDisplay    String
+  proofType         String
+  verifiedAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+  revokedAt         DateTime?
+  user              User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([chainNamespace, chainReference, addressCanonical])
+  @@index([userId, revokedAt])
+}
+
+model EvmTokenAllowlistEntry {
+  id              String   @id @default(cuid())
+  userId          String
+  chainId         Int
+  contractAddress String
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chainId, contractAddress])
+  @@index([userId, chainId, createdAt])
+}
+
+model EvmPortfolioNetwork {
+  id        String   @id @default(cuid())
+  userId    String
+  chainId   Int
+  enabledAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chainId])
+  @@index([userId, enabledAt])
+}
+
+model MarketAlert {
+  id                 String   @id @default(cuid())
+  userId             String
+  symbol             String
+  condition          String
+  threshold          String
+  status             String   @default("ACTIVE")
+  lastEvaluatedAt    DateTime?
+  lastObservedValue  String?
+  lastEvaluationError String?
+  triggeredAt        DateTime?
+  deletedAt          DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event              MarketAlertEvent?
+
+  @@index([userId, status, createdAt])
+  @@index([status, lastEvaluatedAt, createdAt])
+}
+
+model MarketAlertEvent {
+  id               String   @id @default(cuid())
+  alertId          String   @unique
+  actorUserId      String
+  observedValue    String
+  sourceObservedAt DateTime
+  providerId       String
+  triggeredAt      DateTime @default(now())
+  alert            MarketAlert @relation(fields: [alertId], references: [id], onDelete: Restrict)
+  actor            User     @relation("MarketAlertEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, triggeredAt])
+}
+
+model TradingVenueCredential {
+  id                    String   @id @default(cuid())
+  userId                String
+  venue                 String
+  label                 String
+  credentialCiphertext  String
+  credentialIv          String
+  credentialAuthTag     String
+  fingerprint           String
+  verifiedAt            DateTime?
+  revokedAt             DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, venue, fingerprint])
+  @@index([userId, revokedAt])
+  @@index([venue, revokedAt])
+}
+
+model TradeOrder {
+  id                    String   @id @default(cuid())
+  userId                String
+  venue                 String
+  market                String
+  side                  String
+  orderType             String
+  status                String   @default("PENDING")
+  clientOrderId         String   @unique
+  venueOrderId          String?
+  requestedAmount       String
+  limitPrice            String?
+  stopLossPrice         String
+  notionalUsdCents      Int
+  verifiedBalanceCents  Int
+  submittedAt           DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  redactedResultJson    String   @default("{}")
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([venue, venueOrderId])
+  @@index([status, createdAt])
+}
+
+model AuthNonce {
+  nonceHash       String   @id
+  addressCanonical String
+  chainId         Int
+  domain          String
+  uri             String
+  issuedAt        DateTime @default(now())
+  expiresAt       DateTime
+  consumedAt      DateTime?
+
+  @@index([expiresAt, consumedAt])
+}
+
+model RoleAssignment {
+  id         String    @id @default(cuid())
+  userId     String
+  role       String
+  scope      String    @default("global")
+  assignedBy String?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, scope, revokedAt])
+}
+
+model AuditEvent {
+  id            String   @id @default(cuid())
+  actorUserId   String?
+  action        String
+  objectType    String
+  objectId      String?
+  occurredAt    DateTime @default(now())
+  outcome       String
+  redactedJson  String   @default("{}")
+  actor         User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([occurredAt])
+  @@index([actorUserId, occurredAt])
+}
+
+model RiskPolicySettings {
+  id                          String   @id @default("global")
+  maxRiskPerTradePercent      String   @default("1")
+  maxOpenExposurePercent      String   @default("25")
+  dailyLossHaltPercent        String   @default("2")
+  maxTradesPerDay             Int      @default(10)
+  defaultMaxLeverage          String   @default("1")
+  minimumVerifiedBalanceUsd   String   @default("20")
+  first24HourExposureUsd      String   @default("20")
+  approvedSymbolsJson         String   @default("[]")
+  killSwitchActive             Boolean  @default(false)
+  updatedByUserId             String?
+  updatedAt                   DateTime @updatedAt
+  updatedBy                   User?    @relation("RiskPolicyUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([updatedByUserId])
+}
+
+model ChainGPTFeatureSettings {
+  id                         String   @id @default("global")
+  chatbotEnabled             Boolean  @default(true)
+  contractAuditorEnabled     Boolean  @default(true)
+  contractGeneratorEnabled  Boolean  @default(true)
+  aiTradingAssistantEnabled Boolean  @default(true)
+  aiNewsEnabled              Boolean  @default(true)
+  askCryptoPeopleEnabled    Boolean  @default(true)
+  nftGeneratorEnabled        Boolean  @default(true)
+  cryptoGuardEnabled         Boolean  @default(true)
+  aiAgentsEnabled            Boolean  @default(true)
+  updatedByUserId            String?
+  updatedAt                  DateTime @updatedAt
+  updatedBy                  User?    @relation("ChainGPTSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([updatedByUserId])
+}
+
+model WunderTradingFeatureSettings {
+  id                    String   @id @default("global")
+  apiProfilesEnabled    Boolean  @default(false)
+  liveStrategiesEnabled Boolean  @default(false)
+  strategyHistoryEnabled Boolean @default(false)
+  openTradesEnabled     Boolean  @default(false)
+  closeTradesEnabled    Boolean  @default(false)
+  updatedByUserId       String?
+  updatedAt             DateTime @updatedAt
+  updatedBy             User?    @relation("WunderTradingSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([updatedByUserId])
+}
+
+model IntegrationFeatureSettings {
+  id                  String   @id @default("global")
+  alternativeMeSentimentEnabled Boolean @default(false)
+  alchemyRpcEnabled   Boolean  @default(false)
+  tavilySearchEnabled Boolean  @default(false)
+  tavilyExtractEnabled Boolean @default(false)
+  updatedByUserId     String?
+  updatedAt           DateTime @updatedAt
+  updatedBy           User?    @relation("IntegrationSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([updatedByUserId])
+}
+
+model DepartmentTeam {
+  id             String           @id @default(cuid())
+  name           String
+  slug           String           @unique
+  createdAt      DateTime         @default(now())
+  createdByUserId String?
+  createdBy      User?            @relation("TeamCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  memberships    TeamMembership[]
+}
+
+model TeamMembership {
+  id               String        @id @default(cuid())
+  teamId           String
+  userId           String
+  teamRole         String        @default("MEMBER")
+  assignedByUserId String?
+  createdAt        DateTime      @default(now())
+  revokedAt        DateTime?
+  team             DepartmentTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user             User          @relation("TeamMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedBy       User?         @relation("TeamMemberAssignedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([teamId, userId])
+  @@index([userId, revokedAt])
+}
+
+model UserPermissionGrant {
+  id              String    @id @default(cuid())
+  userId          String
+  permissionKey   String
+  grantedByUserId String?
+  createdAt       DateTime  @default(now())
+  revokedAt       DateTime?
+  user            User      @relation("PermissionUser", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy       User?     @relation("PermissionGrantedBy", fields: [grantedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, permissionKey])
+  @@index([permissionKey, revokedAt])
+}
+
+model MarketCandleRecord {
+  id                 String   @id @default(cuid())
+  providerId         String
+  symbol             String
+  interval           String
+  openTime           DateTime
+  closeTime          DateTime
+  open               String
+  high               String
+  low                String
+  close              String
+  volume             String
+  providerObservedAt DateTime?
+  fetchedAt          DateTime
+  freshness          String
+  responseHash       String?
+
+  @@unique([providerId, symbol, interval, openTime])
+  @@index([symbol, interval, openTime])
+  @@index([fetchedAt])
+}
+
+model MarketNewsRecord {
+  id            String   @id @default(cuid())
+  providerId    String
+  sourceName    String
+  title         String
+  url           String
+  imageUrl      String?
+  publishedAt   DateTime?
+  fetchedAt     DateTime
+  contentHash   String
+
+  @@unique([providerId, url])
+  @@index([publishedAt])
+  @@index([fetchedAt])
+}

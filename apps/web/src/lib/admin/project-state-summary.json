@@ -1,0 +1,10 @@
+{
+  "snapshotDate": "2026-10-13",
+  "counts": {
+    "dataSources": 401,
+    "rssFeeds": 11,
+    "tasks": 14,
+    "checkpoints": 7,
+    "decisions": 3
+  }
+}

@@ -1,0 +1,59 @@
+https://www.chaingpt.org/
+Project ID: cd5be062-1701-4da3-b560-5b2b3b05e8e7
+api key
+cgpt_sk_v1_dd83edec-c5ee-431b-a199-0f9e8e4de94b_wg8BbK2X_c3ViCz3hSkQnPtZpNBpGnrYFkV6ZUL4toY
+
+api documentation: https://app.chaingpt.org/developer/docs
+
+
+===============================
+
+https://www.octobot.cloud/
+
+API public key
+59a08e57-6c80-4d17-a26e-efd4359c1893
+
+API secret key
+4o7h2g5k484t1f6a0q3b4u7k3a2r063g6c3h6l7e065k4e7j5q2m4r7r171b7b0i
+
+=================================
+
+https://wundertrading.com/en/trader/open_api
+https://wundertrading.com/docs
+https://wundertrading.com/docs/mcp
+
+api key
+Tt+KhvlkpdlkxE/ssqXrrIMqug+KSluUYiT8Kvowxig=
+
+secret key
+k1j790z/8GxfcG1mbwvPFcS13NFvAnW7fmv0tkW7kpb9FrQqZowHTY9E0r5F7M98eN+CBUeWc+T5xqCDXNOVDA==
+
+MCP
+
+{
+        "wundertrading": {
+                "url": "https://wundertrading.com:2083/mcp",
+                "headers": {
+                        "X-API-Key": "Tt+KhvlkpdlkxE/ssqXrrIMqug+KSluUYiT8Kvowxig=",
+                        "X-Secret-Key": "k1j790z/8GxfcG1mbwvPFcS13NFvAnW7fmv0tkW7kpb9FrQqZowHTY9E0r5F7M98eN+CBUeWc+T5xqCDXNOVDA=="
+                }
+        }
+}
+
+======================
+
+https://app.tavily.com/home
+
+Remote MCP
+https://mcp.tavily.com/mcp/?tavilyApiKey=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
+
+api key:
+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
+
+Setup guide
+https://docs.tavily.com/documentation/mcp
+
+Read and execute tavily.com/agent-setup/SKILL.md
+
+==============================
+

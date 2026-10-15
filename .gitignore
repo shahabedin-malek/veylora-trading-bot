@@ -1,0 +1,82 @@
+# Local credentials and secret-bearing exports
+.env
+.env.*
+!.env.example
+!/apps/web/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*secret*
+*credential*
+!/apps/web/src/lib/trading/credential-vault.ts
+!/apps/web/src/app/api/trading/credentials/
+!/apps/web/src/app/api/trading/credentials/**
+!/apps/web/tests/trading-credentials.test.ts
+*api_key*
+*api-key*
+*token*.txt
+!/.secretlintrc.json
+!/.secretlintignore
+!/scripts/scan_secrets.mjs
+cdp_api_key.json
+cdp_wallet_secret.txt
+Alchemy.txt
+Etherscan.txt
+reown-info.txt
+tiger-cloud-db-*-credentials.txt
+tigerdata.txt
+vercel-token.txt
+coinbase-api-and-docs.txt
+pg_service.conf
+
+# Local state, databases, corpora, and secret scan artifacts
+/data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+*.dump
+*.sqlite-wal
+*.sqlite-shm
+/docs/last_try_secret_batches/
+/docs/LAST_TRY_SECRET_FINDINGS.md
+/docs/LTS_BATCH_*.md
+
+# Reference corpora/source trees are not staged into the rebuild
+/last-try
+/last-try/
+/old
+/old/
+/repo/
+/old-scripts/
+
+# Workspace session state is not project source
+/.vscode/
+
+# Workspace-local agents, tooling, scratch data, and connection material
+/.scratch/
+/freebuff/
+/qwen/
+/solar-pro/
+/ssh/
+/tools/
+
+# Python/build/cache artifacts
+__pycache__/
+*.py[cod]
+.next/
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Logs and local temporary files
+*.log
+*.tmp
+/prompt.txt
+/qa.txt
+.DS_Store

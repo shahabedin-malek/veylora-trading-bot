@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "provider": "Coinbase Exchange",
+  "environment": "production",
+  "authentication": "none",
+  "productId": "BTC-USD",
+  "fetchedAt": "2026-10-14T11:33:08.423Z",
+  "requests": [
+    {
+      "kind": "level1-order-book",
+      "url": "https://api.exchange.coinbase.com/products/BTC-USD/book?level=1",
+      "httpStatus": 200,
+      "providerDate": "Wed, 14 Oct 2026 11:33:08 GMT",
+      "responseHash": "6e448086c785898c5f9056232935996a132f90779e86fc0ef5e61b9d575bc841",
+      "rawResponse": "{\"bids\":[[\"83401.66\",\"0.0683446\",5]],\"asks\":[[\"83401.67\",\"0.02733412\",2]],\"sequence\":137691700133,\"auction_mode\":false,\"auction\":null,\"time\":\"2026-10-14T11:33:07.661896242Z\"}"
+    },
+    {
+      "kind": "daily-candles",
+      "url": "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=86400&start=2026-10-11T11%3A33%3A08.423Z&end=2026-10-14T11%3A33%3A08.423Z",
+      "httpStatus": 200,
+      "providerDate": "Wed, 14 Oct 2026 11:33:08 GMT",
+      "responseHash": "6677c8c8c7ca781c4e8d62d2243efe1861b7b366bc152f1cbbb8dde79e0c79eb",
+      "rawResponse": "[[1791936000,82935.62,84062.11,83101.99,83365.21,1737.4881713],[1791849600,80927.48,84070.33,81735.6,83101.99,5184.64684673],[1791763200,81634.08,84261.99,83678.29,81742.5,4726.89306846]]"
+    }
+  ]
+}
