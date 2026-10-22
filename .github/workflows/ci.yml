@@ -77,3 +77,39 @@ jobs:
           path: ${{ runner.temp }}/veylora-e2e-results
           if-no-files-found: ignore
           retention-days: 7
+
+  failure-artifacts:
+    # Runs only when `quality` fails, and does the half a skipped step cannot: fetch the artifact
+    # back and assert the suite's own report is inside it. Completion is not proof — a name typo or
+    # a version bump that changes the archive layout would only be visible here, after the upload.
+    needs: quality
+    if: failure()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download the failure artifacts
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: playwright-failure-artifacts
+          path: ${{ runner.temp }}/failure-artifacts
+      - name: Assert the failure report came back
+        env:
+          ROOT: ${{ runner.temp }}/failure-artifacts
+        run: |
+          if [ "${{ steps.download.outcome }}" != "success" ]; then
+            echo "::notice::The failing run kept no artifacts, so the browser suite did not get to run."
+            exit 0
+          fi
+          echo "Artifacts the failing browser test retained:"
+          find "$ROOT" -type f | sed "s|$ROOT/||" | sort | head -40
+          trace=$(find "$ROOT" -name 'trace.zip' -print -quit)
+          if [ -z "$trace" ]; then
+            echo "::error::The downloaded artifact holds no trace.zip, so a failure could not be replayed."
+            exit 1
+          fi
+          echo "trace: $trace ($(wc -c < "$trace") bytes)"
+          if [ -z "$(find "$ROOT" \( -name '*.png' -o -name '*.webm' -o -name 'error-context.md' \) -print -quit)" ]; then
+            echo "::error::The downloaded artifact holds no screenshot, video or error context."
+            exit 1
+          fi
