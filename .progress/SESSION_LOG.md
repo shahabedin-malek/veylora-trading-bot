@@ -1,5 +1,24 @@
 # Session log
 
+## Release v0.9.0 — the phases 01–40 tree committed and checked from a clone (2026-10-22)
+
+- The uncommitted tree is now nine commits — the exposed dump and ignore rules; schema, 26
+  migrations and seed; the product surface; the suites; the scripts and CI; the plan, runbook and
+  proof; then three fixes the clone found — tagged `v0.9.0` with `apps/web` at `0.9.0`.
+- Gates on the final files: typecheck 0, test 0 (**821/821**), lint 0, build 0 (98 pages), e2e 0
+  (**10 passed**, 5.8 m), `validate_plan` 0. A clone of the tag repeats install 0, `db:setup` 0,
+  typecheck 0, test 0 (821/821), lint 0, build 0.
+- Four defects the clone exposed, all fixed: the `*credential*`/`*api-key*` ignore rules had kept
+  `src/app/api/admin/api-keys/route.ts` and three migrations out of every commit; `pnpm-workspace.yaml`
+  still carried pnpm's literal `set this to true or false` placeholder, so install — and therefore
+  CI — exited 1; `tsc` needed `.next/types` that only a build produces, so `typecheck` now runs
+  `next typegen` and `tsconfig.json` lists only the current `.next` directories; and
+  `inspectEnvFiles` tested for a file before asking its reader, which made one test pass only where
+  a local `.env` existed.
+- **Not pushed:** the checkout has no remote (`git remote -v` is empty), so the commits and the tag
+  are local. Rotation of the three exposed keys, the history purge, the legal sign-off and every
+  hosted deploy remain the owner's actions, unchanged by this pass.
+
 ## Phase 40 — public pages, parity and launch (done, not published)
 
 - Nine public pages in `(public)` — landing, pricing, status, docs, docs/api, terms, privacy, risk,

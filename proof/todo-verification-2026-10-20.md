@@ -247,7 +247,50 @@ phase 40 is the closest honest substitute, and it is labelled as one.
 
 ---
 
-## 7. Where the evidence is
+## 7. Release pass — 2026-10-22
+
+This section covers the release the tree had not yet had: one commit per logical area, the `v0.9.0`
+tag, and the same gates re-run against a clone of that tag rather than against the working tree.
+
+| Gate | Working tree | Fresh clone of `v0.9.0` |
+| --- | --- | --- |
+| `pnpm install --frozen-lockfile` | (already installed) | exit **0** |
+| `pnpm db:setup` | exit **0**, seeded (14 audit events, 3 orders, 1 deposit) | exit **0**, same seed |
+| `pnpm typecheck` | exit **0** | exit **0** |
+| `pnpm test` | exit **0**, **821/821** | exit **0**, **821/821** |
+| `pnpm lint` | exit **0** | exit **0** |
+| `pnpm build` | exit **0**, 98 pages | exit **0**, 98 pages |
+| `pnpm e2e` | exit **0**, **10 passed** (5.8 m) | not re-run (same tag, same build) |
+| `node scripts/validate_plan.mjs` | exit **0**, 40 phases, 0 restriction hits | — |
+
+Four defects were found by running the gates the way a recipient would rather than the way this
+machine does, and each is fixed:
+
+1. **The secret ignore rules hid source.** `*credential*` and `*api-key*` matched
+   `src/app/api/admin/api-keys/route.ts` and three migrations
+   (`20261015150000_retire_credential_approval_state`, `20261017080000_credential_read_only`,
+   `20261017180000_credential_scope_and_health`), so the panel's own endpoint and three tables were
+   absent from every commit. Narrow negations put them back; `git ls-files --others --ignored` is the
+   check that found them.
+2. **pnpm refused to install.** `pnpm-workspace.yaml` still carried the literal placeholder
+   `set this to true or false` for four dependencies, which makes `pnpm install` exit 1 with
+   `ERR_PNPM_IGNORED_BUILDS` — the first thing a clone or CI does. Each now has an answer.
+3. **Typecheck needed generated types.** `PageProps` and `RouteContext` live in `.next/types`, so
+   `tsc --noEmit` failed on a checkout that had never been built. `typecheck` now runs
+   `next typegen` first, and `tsconfig.json` includes only the current `.next` directories instead of
+   24 per-phase build directories.
+4. **One test depended on this machine.** `inspectEnvFiles` checked `existsSync` before asking its
+   reader, so the remote-database test passed only where `apps/web/.env` exists and failed in a clone.
+   The reader is now asked for every name and a missing file is the `ENOENT` already skipped.
+
+Not done, and why:
+
+- **The tag was not pushed.** The checkout has no configured remote (`git remote -v` prints nothing),
+  so there is nothing to push to. The nine commits and the `v0.9.0` tag exist locally only; adding a
+  remote and running `git push --follow-tags` is the owner's step.
+- Everything in §6 still stands: no rotation, no history purge, no hosted deploy, no legal sign-off.
+
+## 8. Where the evidence is
 
 - The ledger and its checklist: [`plan/PROJECT_TODO.md`](../plan/PROJECT_TODO.md) §4, Phase 40.
 - The phase record this verification extends: [`phase-40-public-pages-and-launch.md`](phase-40-public-pages-and-launch.md).
