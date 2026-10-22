@@ -15,9 +15,11 @@
   `next typegen` and `tsconfig.json` lists only the current `.next` directories; and
   `inspectEnvFiles` tested for a file before asking its reader, which made one test pass only where
   a local `.env` existed.
-- **Not pushed:** the checkout has no remote (`git remote -v` is empty), so the commits and the tag
-  are local. Rotation of the three exposed keys, the history purge, the legal sign-off and every
-  hosted deploy remain the owner's actions, unchanged by this pass.
+- **Pushed:** the checkout had no remote until the owner supplied one; `origin` is now
+  `git@github.com:shahabedin-malek/veylora-trading-bot.git`, and `main` plus the annotated `v0.9.0`
+  tag both resolve to `f847731` there (`git ls-remote --heads --tags origin`). Rotation of the three
+  exposed keys, the history purge, the legal sign-off and every hosted deploy remain the owner's
+  actions, unchanged by this pass.
 
 ## Phase 40 — public pages, parity and launch (done, not published)
 

@@ -285,9 +285,11 @@ machine does, and each is fixed:
 
 Not done, and why:
 
-- **The tag was not pushed.** The checkout has no configured remote (`git remote -v` prints nothing),
-  so there is nothing to push to. The nine commits and the `v0.9.0` tag exist locally only; adding a
-  remote and running `git push --follow-tags` is the owner's step.
+- **The tag was not pushed at first.** The checkout had no configured remote, so the commits and the
+  tag stayed local until the owner supplied one. They are now on `origin`
+  (`git@github.com:shahabedin-malek/veylora-trading-bot.git`): `refs/heads/main` and the annotated
+  `refs/tags/v0.9.0` both resolve to `f847731`, verified with `git ls-remote --heads --tags origin`.
+  The correction you are reading is a later commit; the tag still points at `f847731`.
 - Everything in §6 still stands: no rotation, no history purge, no hosted deploy, no legal sign-off.
 
 ## 8. Where the evidence is
