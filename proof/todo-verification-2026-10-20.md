@@ -260,7 +260,7 @@ tag, and the same gates re-run against a clone of that tag rather than against t
 | `pnpm test` | exit **0**, **821/821** | exit **0**, **821/821** |
 | `pnpm lint` | exit **0** | exit **0** |
 | `pnpm build` | exit **0**, 98 pages | exit **0**, 98 pages |
-| `pnpm e2e` | exit **0**, **10 passed** (5.8 m) | not re-run (same tag, same build) |
+| `pnpm e2e` | exit **0**, **10 passed** (5.8 m) | exit **0**, **10 passed** (3.6 m) |
 | `node scripts/validate_plan.mjs` | exit **0**, 40 phases, 0 restriction hits | — |
 
 Four defects were found by running the gates the way a recipient would rather than the way this
