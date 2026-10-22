@@ -18,6 +18,13 @@ A name listed under several scopes exists as a separate entry per scope in Verce
   scopes as well, or that chain silently loses RPC in that environment.
 - The Neon/Postgres set and the core secrets span Preview and Production.
 
+## Coverage
+
+`pnpm --dir apps/web networks:coverage` compares the `ALCHEMY_*_RPC_URL` network set per scope in
+this manifest and prints any network missing from Development, Preview or Production. `--check`
+exits 1 on a gap, which is the check to run before deploying a new network. The report reads names
+only and never prints a value.
+
 ## Development (167 names, 167 entries)
 
 ADMIN_WALLET_ADDRESSES

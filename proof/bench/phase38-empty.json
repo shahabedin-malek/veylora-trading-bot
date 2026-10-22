@@ -1,0 +1,244 @@
+{
+  "label": "empty",
+  "generatedAt": "2026-10-20T13:08:27.233Z",
+  "indexes": "with",
+  "node": "v24.21.0",
+  "database": "SQLite (prisma/bench.db, copied from prisma/dev.db)",
+  "volume": {
+    "ledgerEntries": 4,
+    "auditEvents": 14,
+    "orders": 3,
+    "decisions": 1,
+    "runningStrategies": 1
+  },
+  "serverRssKb": {
+    "before": 155572,
+    "after": 380080
+  },
+  "pages": [
+    {
+      "path": "/",
+      "status": 200,
+      "medianMs": 53,
+      "minMs": 48,
+      "maxMs": 214,
+      "bytes": 87975
+    },
+    {
+      "path": "/trade",
+      "status": 200,
+      "medianMs": 57,
+      "minMs": 52,
+      "maxMs": 66,
+      "bytes": 87259
+    },
+    {
+      "path": "/account",
+      "status": 200,
+      "medianMs": 39,
+      "minMs": 36,
+      "maxMs": 42,
+      "bytes": 55097
+    },
+    {
+      "path": "/admin",
+      "status": 200,
+      "medianMs": 39,
+      "minMs": 37,
+      "maxMs": 40,
+      "bytes": 75149
+    },
+    {
+      "path": "/api/ledger",
+      "status": 200,
+      "medianMs": 12,
+      "minMs": 11,
+      "maxMs": 12,
+      "bytes": 725
+    },
+    {
+      "path": "/api/trading/orders",
+      "status": 200,
+      "medianMs": 13,
+      "minMs": 11,
+      "maxMs": 15,
+      "bytes": 1884
+    },
+    {
+      "path": "/api/admin/audit",
+      "status": 200,
+      "medianMs": 11,
+      "minMs": 11,
+      "maxMs": 14,
+      "bytes": 9202
+    },
+    {
+      "path": "/api/ledger?format=csv&from=2025-10-21&to=2026-10-20",
+      "status": 200,
+      "medianMs": 11,
+      "minMs": 9,
+      "maxMs": 13,
+      "bytes": 86
+    },
+    {
+      "path": "/api/admin/audit/export?format=csv",
+      "status": 200,
+      "medianMs": 22,
+      "minMs": 16,
+      "maxMs": 33,
+      "bytes": 4760
+    }
+  ],
+  "queries": [
+    {
+      "name": "ledger-statement-window",
+      "rows": 0,
+      "medianMs": 1,
+      "minMs": 0,
+      "maxMs": 4,
+      "plan": [
+        "SEARCH e USING INDEX LedgerEntry_accountId_transactionId_idx (accountId=?)",
+        "SEARCH t USING INDEX sqlite_autoindex_LedgerTransaction_1 (id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "name": "ledger-balance-aggregate",
+      "rows": 0,
+      "medianMs": 0,
+      "minMs": 0,
+      "maxMs": 1,
+      "plan": [
+        "SEARCH e USING INDEX LedgerEntry_accountId_transactionId_idx (accountId=?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ]
+    },
+    {
+      "name": "ledger-statement-page",
+      "rows": 0,
+      "medianMs": 1,
+      "minMs": 1,
+      "maxMs": 1,
+      "plan": [
+        "SEARCH e USING INDEX LedgerEntry_accountId_transactionId_idx (accountId=?)",
+        "SEARCH t USING INDEX sqlite_autoindex_LedgerTransaction_1 (id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "name": "ledger-range-in-window",
+      "rows": 0,
+      "medianMs": 1,
+      "minMs": 1,
+      "maxMs": 1,
+      "plan": [
+        "SEARCH e USING INDEX LedgerEntry_accountId_transactionId_idx (accountId=?)",
+        "SEARCH t USING INDEX sqlite_autoindex_LedgerTransaction_1 (id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "name": "audit-newest-page",
+      "rows": 0,
+      "medianMs": 1,
+      "minMs": 1,
+      "maxMs": 1,
+      "plan": [
+        "SEARCH AuditEvent USING INDEX AuditEvent_occurredAt_idx (occurredAt>?)",
+        "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+      ]
+    },
+    {
+      "name": "audit-source-page",
+      "rows": 0,
+      "medianMs": 1,
+      "minMs": 1,
+      "maxMs": 1,
+      "plan": [
+        "SCAN AuditEvent USING INDEX AuditEvent_occurredAt_idx",
+        "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+      ]
+    },
+    {
+      "name": "orders-open-for-market",
+      "rows": 0,
+      "medianMs": 1,
+      "minMs": 1,
+      "maxMs": 2,
+      "plan": [
+        "SEARCH TradeOrder USING INDEX TradeOrder_userId_createdAt_idx (userId=?)"
+      ]
+    },
+    {
+      "name": "orders-list-for-account",
+      "rows": 0,
+      "medianMs": 1,
+      "minMs": 0,
+      "maxMs": 2,
+      "plan": [
+        "SEARCH TradeOrder USING INDEX TradeOrder_userId_createdAt_idx (userId=?)"
+      ]
+    },
+    {
+      "name": "decisions-for-account",
+      "rows": 0,
+      "medianMs": 1,
+      "minMs": 0,
+      "maxMs": 1,
+      "plan": [
+        "SEARCH StrategyDecision USING INDEX StrategyDecision_userId_evaluatedAt_idx (userId=?)"
+      ]
+    }
+  ],
+  "runner": {
+    "status": 200,
+    "passMs": 543,
+    "intervalSeconds": 300,
+    "headroomSeconds": 299,
+    "summary": {
+      "invocationId": "de863848-7052-4b30-8966-e0b65fa232be",
+      "owner": "chris-pc#824668-7414e889",
+      "selector": "strategy-activation",
+      "startedAt": "2026-10-20T13:08:26.728Z",
+      "finishedAt": "2026-10-20T13:08:27.223Z",
+      "durationMs": 495,
+      "jobsDue": 1,
+      "jobsRan": 1,
+      "jobsSkipped": 0,
+      "jobsFailed": 0,
+      "outcome": "worked",
+      "reason": null,
+      "heartbeats": [
+        {
+          "jobId": "strategy-activation",
+          "label": "Smart trading activation",
+          "status": "worked",
+          "summary": "1 activation(s): 2 window(s) decided, 0 order(s) placed, 2 idle, 0 error, 1 missed window(s) recorded. Placement is off for real money: live execution is off in /admin/risk, so passes route to the paper venue.",
+          "reason": null,
+          "attempts": 1,
+          "reclaimed": false,
+          "intervalMinutes": 5,
+          "cadence": "5 minutes",
+          "startedAt": "2026-10-20T13:08:26.728Z",
+          "finishedAt": "2026-10-20T13:08:27.216Z",
+          "durationMs": 488,
+          "nextDueAt": "2026-10-20T13:13:27.216Z",
+          "detail": {
+            "active": 1,
+            "decided": 2,
+            "placed": 0,
+            "idle": 2,
+            "error": 0,
+            "gaps": 1,
+            "placement": "paper",
+            "liveExecutionEnabled": false,
+            "reasons": "dev-test-account: 7009 evaluation window(s) passed without a runner invocation — a deploy, a crash or a missed schedule. The loop continued with this window's decision. | dev-test-account: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added.",
+            "failedAccounts": null,
+            "failureMessages": null,
+            "idleReasons": "dev-test-account: 7009 evaluation window(s) passed without a runner invocation — a deploy, a crash or a missed schedule. The loop continued with this window's decision. | dev-test-account: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added."
+          }
+        }
+      ]
+    }
+  }
+}

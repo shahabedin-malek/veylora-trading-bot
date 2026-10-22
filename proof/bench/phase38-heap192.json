@@ -1,0 +1,245 @@
+{
+  "label": "heap192",
+  "generatedAt": "2026-10-20T13:10:34.282Z",
+  "indexes": "with",
+  "heapMb": 192,
+  "node": "v24.21.0",
+  "database": "SQLite (prisma/bench.db, copied from prisma/dev.db)",
+  "volume": {
+    "ledgerEntries": 100004,
+    "auditEvents": 50014,
+    "orders": 20003,
+    "decisions": 20001,
+    "runningStrategies": 26
+  },
+  "serverRssKb": {
+    "before": 135844,
+    "after": 462228
+  },
+  "pages": [
+    {
+      "path": "/",
+      "status": 200,
+      "medianMs": 184,
+      "minMs": 184,
+      "maxMs": 184,
+      "bytes": 88073
+    },
+    {
+      "path": "/trade",
+      "status": 200,
+      "medianMs": 1274,
+      "minMs": 1274,
+      "maxMs": 1274,
+      "bytes": 93775
+    },
+    {
+      "path": "/account",
+      "status": 200,
+      "medianMs": 65,
+      "minMs": 65,
+      "maxMs": 65,
+      "bytes": 55140
+    },
+    {
+      "path": "/admin",
+      "status": 200,
+      "medianMs": 47,
+      "minMs": 47,
+      "maxMs": 47,
+      "bytes": 75149
+    },
+    {
+      "path": "/api/ledger",
+      "status": 200,
+      "medianMs": 811,
+      "minMs": 811,
+      "maxMs": 811,
+      "bytes": 231390
+    },
+    {
+      "path": "/api/trading/orders",
+      "status": 200,
+      "medianMs": 25,
+      "minMs": 25,
+      "maxMs": 25,
+      "bytes": 17999
+    },
+    {
+      "path": "/api/admin/audit",
+      "status": 200,
+      "medianMs": 84,
+      "minMs": 84,
+      "maxMs": 84,
+      "bytes": 72518
+    },
+    {
+      "path": "/api/ledger?format=csv&from=2025-10-21&to=2026-10-20",
+      "status": 200,
+      "medianMs": 8325,
+      "minMs": 8325,
+      "maxMs": 8325,
+      "bytes": 6875899
+    },
+    {
+      "path": "/api/admin/audit/export?format=csv",
+      "status": 200,
+      "medianMs": 6723,
+      "minMs": 6723,
+      "maxMs": 6723,
+      "bytes": 7100481
+    }
+  ],
+  "queries": [
+    {
+      "name": "ledger-statement-window",
+      "rows": 50000,
+      "medianMs": 1274,
+      "minMs": 1274,
+      "maxMs": 1274,
+      "plan": [
+        "SEARCH e USING INDEX LedgerEntry_accountId_transactionId_idx (accountId=?)",
+        "SEARCH t USING INDEX sqlite_autoindex_LedgerTransaction_1 (id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "name": "ledger-balance-aggregate",
+      "rows": 1,
+      "medianMs": 124,
+      "minMs": 124,
+      "maxMs": 124,
+      "plan": [
+        "SEARCH e USING INDEX LedgerEntry_accountId_transactionId_idx (accountId=?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ]
+    },
+    {
+      "name": "ledger-statement-page",
+      "rows": 500,
+      "medianMs": 106,
+      "minMs": 106,
+      "maxMs": 106,
+      "plan": [
+        "SEARCH e USING INDEX LedgerEntry_accountId_transactionId_idx (accountId=?)",
+        "SEARCH t USING INDEX sqlite_autoindex_LedgerTransaction_1 (id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "name": "ledger-range-in-window",
+      "rows": 3749,
+      "medianMs": 177,
+      "minMs": 177,
+      "maxMs": 177,
+      "plan": [
+        "SEARCH e USING INDEX LedgerEntry_accountId_transactionId_idx (accountId=?)",
+        "SEARCH t USING INDEX sqlite_autoindex_LedgerTransaction_1 (id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "name": "audit-newest-page",
+      "rows": 200,
+      "medianMs": 15,
+      "minMs": 15,
+      "maxMs": 15,
+      "plan": [
+        "SEARCH AuditEvent USING INDEX AuditEvent_occurredAt_idx (occurredAt>?)",
+        "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+      ]
+    },
+    {
+      "name": "audit-source-page",
+      "rows": 200,
+      "medianMs": 8,
+      "minMs": 8,
+      "maxMs": 8,
+      "plan": [
+        "SCAN AuditEvent USING INDEX AuditEvent_occurredAt_idx",
+        "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+      ]
+    },
+    {
+      "name": "orders-open-for-market",
+      "rows": 0,
+      "medianMs": 11,
+      "minMs": 11,
+      "maxMs": 11,
+      "plan": [
+        "SEARCH TradeOrder USING INDEX TradeOrder_userId_createdAt_idx (userId=?)"
+      ]
+    },
+    {
+      "name": "orders-list-for-account",
+      "rows": 100,
+      "medianMs": 14,
+      "minMs": 14,
+      "maxMs": 14,
+      "plan": [
+        "SEARCH TradeOrder USING INDEX TradeOrder_userId_createdAt_idx (userId=?)"
+      ]
+    },
+    {
+      "name": "decisions-for-account",
+      "rows": 100,
+      "medianMs": 9,
+      "minMs": 9,
+      "maxMs": 9,
+      "plan": [
+        "SEARCH StrategyDecision USING INDEX StrategyDecision_userId_evaluatedAt_idx (userId=?)"
+      ]
+    }
+  ],
+  "runner": {
+    "status": 200,
+    "passMs": 750,
+    "intervalSeconds": 300,
+    "headroomSeconds": 299,
+    "summary": {
+      "invocationId": "b065b406-b851-460f-81a1-dbe032287780",
+      "owner": "chris-pc#825882-bb7a308c",
+      "selector": "strategy-activation",
+      "startedAt": "2026-10-20T13:10:33.589Z",
+      "finishedAt": "2026-10-20T13:10:34.265Z",
+      "durationMs": 676,
+      "jobsDue": 1,
+      "jobsRan": 1,
+      "jobsSkipped": 0,
+      "jobsFailed": 0,
+      "outcome": "worked",
+      "reason": null,
+      "heartbeats": [
+        {
+          "jobId": "strategy-activation",
+          "label": "Smart trading activation",
+          "status": "worked",
+          "summary": "26 activation(s): 27 window(s) decided, 0 order(s) placed, 27 idle, 0 error, 1 missed window(s) recorded. Placement is off for real money: live execution is off in /admin/risk, so passes route to the paper venue.",
+          "reason": null,
+          "attempts": 1,
+          "reclaimed": false,
+          "intervalMinutes": 5,
+          "cadence": "5 minutes",
+          "startedAt": "2026-10-20T13:10:33.589Z",
+          "finishedAt": "2026-10-20T13:10:34.262Z",
+          "durationMs": 673,
+          "nextDueAt": "2026-10-20T13:15:34.262Z",
+          "detail": {
+            "active": 26,
+            "decided": 27,
+            "placed": 0,
+            "idle": 27,
+            "error": 0,
+            "gaps": 1,
+            "placement": "paper",
+            "liveExecutionEnabled": false,
+            "reasons": "dev-test-account: 7009 evaluation window(s) passed without a runner invocation — a deploy, a crash or a missed schedule. The loop continued with this window's decision. | dev-test-account: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-0: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-1: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-2: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-3: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-4: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-5: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-6: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-7: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-8: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-9: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-10: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-11: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-12: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-13: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-14: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-15: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-16: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-17: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-18: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-19: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-20: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-21: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-22: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-23: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-24: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added.",
+            "failedAccounts": null,
+            "failureMessages": null,
+            "idleReasons": "dev-test-account: 7009 evaluation window(s) passed without a runner invocation — a deploy, a crash or a missed schedule. The loop continued with this window's decision. | dev-test-account: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-0: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-1: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-2: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-3: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-4: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-5: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-6: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-7: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-8: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-9: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-10: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-11: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-12: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-13: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-14: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-15: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-16: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-17: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-18: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-19: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-20: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-21: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-22: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-23: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added. | bench-strategy-user-24: No exchange key is connected for this account, so the Smart RSI · daily close entry was not sent. The activation stays running and will act once a key is added."
+          }
+        }
+      ]
+    }
+  }
+}
