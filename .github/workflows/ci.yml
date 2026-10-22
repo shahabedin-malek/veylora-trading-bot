@@ -8,11 +8,13 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      # Each of these runs on Node 24; the v4/v5 lines ran on Node 20, which the runner now
+      # forces onto Node 24 and warns about on every run.
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 11.15.1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -64,7 +66,7 @@ jobs:
           E2E_OUTPUT_DIR: ${{ runner.temp }}/veylora-e2e-results
       - name: Upload browser failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-failure-artifacts
           path: ${{ runner.temp }}/veylora-e2e-results
