@@ -32,6 +32,41 @@ jobs:
       - name: Tests
         run: pnpm test
         working-directory: apps/web
+      - name: Environment parity
+        # Every Production variable is present in the other scopes, or its absence is declared
+        # with a reason in scripts/env-parity.mjs. Fails on an undeclared difference.
+        run: node scripts/env-parity.mjs --check
+        working-directory: apps/web
       - name: Build
         run: pnpm build
         working-directory: apps/web
+      - name: Plan validator
+        run: node scripts/validate_plan.mjs
+        working-directory: .
+      - name: No environment file is committed
+        # `.env.example` is a template of names and belongs in git; a filled-in file does not.
+        run: |
+          committed=$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '\.example$' || true)
+          if [ -n "$committed" ]; then
+            echo "Committed environment file(s) — remove them and their history before publishing:"
+            echo "$committed"
+            exit 1
+          fi
+          echo "No committed environment file."
+        working-directory: .
+      - name: Install Playwright browser
+        run: pnpm --config.verify-deps-before-run=false exec playwright install --with-deps chromium
+        working-directory: apps/web
+      - name: Browser end-to-end
+        run: pnpm --config.verify-deps-before-run=false e2e
+        working-directory: apps/web
+        env:
+          E2E_OUTPUT_DIR: ${{ runner.temp }}/veylora-e2e-results
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-artifacts
+          path: ${{ runner.temp }}/veylora-e2e-results
+          if-no-files-found: ignore
+          retention-days: 7
