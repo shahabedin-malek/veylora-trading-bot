@@ -29,6 +29,24 @@ test("falls back to the shared account-wide key plus a known hostname", () => {
   if (result.ok) assert.equal(result.endpoint, "https://base-mainnet.g.alchemy.com/v2/shared-test-key");
 });
 
+test("an empty shared key does not shadow the legacy Ethereum key", () => {
+  const env = {
+    NODE_ENV: "test",
+    ALCHEMY_API_KEY: "   ",
+    ALCHEMY_ETHEREUM_MAINNET_API_KEY: "legacy-test-key",
+  } as NodeJS.ProcessEnv;
+  const result = resolveRpcEndpoint("base", env);
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.endpoint, "https://base-mainnet.g.alchemy.com/v2/legacy-test-key");
+});
+
+test("blank keys are reported as unconfigured rather than used", () => {
+  const env = { NODE_ENV: "test", ALCHEMY_API_KEY: "", ALCHEMY_ETHEREUM_MAINNET_API_KEY: "  " } as NodeJS.ProcessEnv;
+  const result = resolveRpcEndpoint("base", env);
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.reason, "unconfigured");
+});
+
 test("rejects an invalid network name and an unconfigured network", () => {
   const invalid = resolveRpcEndpoint("not a network", {} as NodeJS.ProcessEnv);
   assert.equal(invalid.ok, false);

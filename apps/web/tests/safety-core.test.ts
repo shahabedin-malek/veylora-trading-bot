@@ -84,8 +84,8 @@ test("per-bot kill switch refuses only that bot's attempts", async () => {
 test("missing and unreachable risk policies refuse instead of using defaults", async () => {
   const missing = await evaluateAndAuditOrderAttempt(new InMemorySafetyStore(null), validOrder(), context("missing-policy"));
   const unreachable = await evaluateAndAuditOrderAttempt(new InMemorySafetyStore(approvedPolicy, new Set(["policy"])), validOrder(), context("unreachable-policy"));
-  assert.deepEqual(missing, { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["risk-policy-unavailable"] });
-  assert.deepEqual(unreachable, { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["risk-policy-unavailable"] });
+  assert.deepEqual(missing, { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["risk-policy-unavailable"], limits: [] });
+  assert.deepEqual(unreachable, { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["risk-policy-unavailable"], limits: [] });
 });
 
 test("per-trade, exposure, and daily-loss caps refuse attempts", async () => {
@@ -112,8 +112,8 @@ test("unavailable kill-switch state and failed audit both refuse", async () => {
     validOrder(),
     context("audit-unavailable"),
   );
-  assert.deepEqual(switchUnavailable, { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["risk-state-unavailable"] });
-  assert.deepEqual(auditUnavailable, { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["audit-unavailable"] });
+  assert.deepEqual(switchUnavailable, { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["risk-state-unavailable"], limits: [] });
+  assert.deepEqual(auditUnavailable, { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["audit-unavailable"], limits: [] });
 });
 
 test("risk-cap changes are actor-stamped and audit is append-only", async () => {

@@ -202,6 +202,52 @@ test("market data service stays unavailable without a provider and caches each q
   assert.equal(quoteCalls, 3);
 });
 
+test("a cached market value is tied to its provider, its as-of and its freshness window", async () => {
+  // The property the key exists for: a value from an earlier window is never
+  // returned as a current one, and two questions about different moments are two
+  // entries rather than one answer pretending to cover both.
+  let clock = 0;
+  let calls = 0;
+  const service = new MarketDataService(
+    {
+      id: "provider-a",
+      async getQuotes() {
+        calls += 1;
+        return { status: "available", data: [] };
+      },
+      async getCandles() {
+        calls += 1;
+        return { status: "available", data: [] };
+      },
+      async getNews() {
+        calls += 1;
+        return { status: "available", data: [] };
+      },
+    },
+    { quotesMs: 1_000, candlesMs: 1_000, newsMs: 1_000 },
+    () => clock,
+  );
+
+  await service.getQuotes({ instruments: ["BTC-USD"] });
+  await service.getQuotes({ instruments: ["BTC-USD"] });
+  assert.equal(calls, 1, "the same question in the same window is one call");
+
+  clock = 999;
+  await service.getQuotes({ instruments: ["BTC-USD"] });
+  assert.equal(calls, 1, "the same window still answers from the cache");
+
+  clock = 1_000;
+  await service.getQuotes({ instruments: ["BTC-USD"] });
+  assert.equal(calls, 2, "a value from the previous window is not served as current");
+
+  const first = { instrument: "BTC-USD", interval: "1d" as const, from: "2026-10-01T00:00:00.000Z", to: "2026-10-02T00:00:00.000Z" };
+  await service.getCandles(first);
+  await service.getCandles(first);
+  assert.equal(calls, 3);
+  await service.getCandles({ ...first, to: "2026-10-03T00:00:00.000Z" });
+  assert.equal(calls, 4, "a candle range is part of the key: another as-of is another question");
+});
+
 test("Coinbase public provider maps the approved level-one book with timestamp and response hash", async () => {
   const fetcher: typeof fetch = async (input) => {
     assert.equal(String(input), `${COINBASE_REST_BASE_URL}/products/BTC-USD/book?level=1`);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveDatabaseUrl } from "../src/lib/database-config";
+import { DEVELOPMENT_DATABASE_URL, resolveDatabaseUrl } from "../src/lib/database-config";
 
 test("standard Prisma datasource URL takes precedence over the Neon alias", () => {
   assert.equal(
@@ -27,4 +27,18 @@ test("empty datasource variables do not override a configured Neon alias", () =>
     }),
     "postgresql://linked.example/db",
   );
+});
+
+test("development falls back to the local SQLite file so no env file is required", () => {
+  assert.equal(resolveDatabaseUrl({ NODE_ENV: "development" }), DEVELOPMENT_DATABASE_URL);
+  assert.equal(
+    resolveDatabaseUrl({ NODE_ENV: "development", DATABASE_URL: "file:./custom.db" }),
+    "file:./custom.db",
+  );
+});
+
+test("only development has a fallback; production and tests stay unset", () => {
+  assert.equal(resolveDatabaseUrl({ NODE_ENV: "production" }), undefined);
+  assert.equal(resolveDatabaseUrl({ NODE_ENV: "test" }), undefined);
+  assert.equal(resolveDatabaseUrl({}), undefined);
 });

@@ -23,8 +23,10 @@ test("integration readiness recognizes only configured names and valid auth mate
     TRADING_CREDENTIAL_ENCRYPTION_KEY: "ab".repeat(32),
     NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "public-project-id-only",
     ALCHEMY_API_KEY: "unit-test-api-key-only",
+    SANDBASE_API_KEY: "unit-test-sandbase-key-only",
   } as NodeJS.ProcessEnv);
   assert.equal(items.filter((item) => item.id !== "tavily-keyless").every((item) => item.configured), true);
   assert.equal(JSON.stringify(items).includes("unit-test-only"), false);
   assert.equal(JSON.stringify(items).includes("public-project-id-only"), false);
+  assert.equal(JSON.stringify(items).includes("unit-test-sandbase-key-only"), false);
 });

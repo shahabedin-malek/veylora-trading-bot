@@ -18,6 +18,7 @@ test("venue credentials are encrypted, venue-bound, and authenticated", () => {
       apiKey: "test-api-key-not-a-real-credential",
       apiSecret: "test-api-secret-not-a-real-credential",
       passphrase: "test-passphrase",
+      readOnly: false,
     };
     const encrypted = encryptVenueCredentials("coinbase-advanced", material);
 
@@ -33,6 +34,54 @@ test("venue credentials are encrypted, venue-bound, and authenticated", () => {
       ciphertext: tamperedBytes.toString("base64url"),
     };
     assert.throws(() => decryptVenueCredentials("coinbase-advanced", tampered));
+  } finally {
+    if (originalKey === undefined) delete process.env.TRADING_CREDENTIAL_ENCRYPTION_KEY;
+    else process.env.TRADING_CREDENTIAL_ENCRYPTION_KEY = originalKey;
+  }
+});
+
+/**
+ * The scope travels inside the sealed material (phase 15).
+ *
+ * A read-labelled key is refused for trading by name, so "did this key say it may
+ * trade?" is a value an attacker would want to change — and it cannot be, because it
+ * is covered by the authentication tag: editing a stored row's bytes to turn a
+ * read-only key into a trade-capable one breaks decryption instead of changing the
+ * answer. The column on the credential mirrors the same claim for a listing or a
+ * refusal that has no key material to open.
+ */
+test("a key's scope is part of the sealed material and cannot be coerced", () => {
+  const originalKey = process.env.TRADING_CREDENTIAL_ENCRYPTION_KEY;
+  process.env.TRADING_CREDENTIAL_ENCRYPTION_KEY = Buffer.alloc(32, 0x42).toString("hex");
+
+  try {
+    const readOnly = encryptVenueCredentials("kraken", {
+      apiKey: "test-read-only-key",
+      apiSecret: "test-read-only-secret",
+      readOnly: true,
+    });
+    assert.equal(decryptVenueCredentials("kraken", readOnly).readOnly, true);
+
+    // A credential stored before the flag existed decrypts as trade-capable, which is
+    // what every key connected before this phase meant.
+    const legacy = encryptVenueCredentials("kraken", { apiKey: "test-key", apiSecret: "test-secret" });
+    assert.equal(decryptVenueCredentials("kraken", legacy).readOnly, false);
+
+    // Flipping the stored bytes does not flip the answer; it breaks the tag.
+    const flipped = Buffer.from(readOnly.ciphertext, "base64url");
+    flipped[0] ^= 0x01;
+    assert.throws(() =>
+      decryptVenueCredentials("kraken", { ...readOnly, ciphertext: flipped.toString("base64url") }),
+    );
+
+    // A scope that is not a boolean is refused rather than read as truthy.
+    assert.throws(() =>
+      encryptVenueCredentials("kraken", {
+        apiKey: "test-key",
+        apiSecret: "test-secret",
+        readOnly: "yes",
+      } as never),
+    );
   } finally {
     if (originalKey === undefined) delete process.env.TRADING_CREDENTIAL_ENCRYPTION_KEY;
     else process.env.TRADING_CREDENTIAL_ENCRYPTION_KEY = originalKey;
