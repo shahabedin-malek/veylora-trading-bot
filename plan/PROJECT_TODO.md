@@ -447,9 +447,11 @@ project are named as such.
 - [ ] `env:parity --strict` clear in the host's project settings (the ten unconfirmed names); the
       procedure is §8 of `OWNER_RUNBOOK.md`, and it cannot be done from the repository
 - [x] the E2E suite green locally — 5/5 on 2026-10-20, exit 0, after the route-move repair
-- [ ] the same journey verified against the deployment that will be published — the suite as written
-      owns its own server, database and mock chain, so this needs a separate read-only smoke spec;
-      see `proof/todo-verification-2026-10-20.md` for why it is not the same check
+- [ ] the same journey verified against the deployment that will be published — the separate
+      read-only smoke spec now exists (`playwright.smoke.config.ts`, `e2e/smoke.spec.ts`) and passed
+      **5/5** against a local production build on 2026-10-22; the hosted run, with
+      `SMOKE_EXPECT_COMMIT` set, is still the owner's step. See
+      `proof/todo-verification-2026-10-20.md` for why it is not the journey suite.
 - [ ] the owner's explicit go-ahead to publish
 
 **Verification record (2026-10-20).** Every line above was re-measured after the phase-40 repair:

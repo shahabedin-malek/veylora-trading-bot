@@ -1,5 +1,46 @@
 # Session log
 
+## Ship-prep audit — a blocking Next.js advisory, and the plan's four code changes verified (2026-10-22)
+
+- **The build no longer passed, and not because of this repository's code.** `next build` exited 1 with
+  `SecurityFatalError: Your version of Next.js is affected by a known security vulnerability` after
+  compiling 98 pages successfully. The npm bulk advisory endpoint named two against `next@16.4.0`:
+  `GHSA-2464-fhr4-w9xw` (critical, unauthenticated RCE in Image Optimization when SVG is used) and
+  `GHSA-p3m5-59mp-jv5r` (high, DoS in App Router Server Actions), both `>=16.0.0 <=16.4.0`.
+  `next` and `eslint-config-next` moved to **16.4.2**, the current `latest`; the same query against
+  16.4.2 returns `{}`. `pnpm audit --prod` reports no known vulnerabilities.
+- **Gates after the upgrade, from `apps/web`:** typecheck 0, test 0 (**821/821**), lint 0, build 0
+  (98 pages, no advisory stop), e2e 0 (**10 passed**, 5.7 m), `validate_plan` 0, `networks:coverage`
+  0 (154 networks in each scope), `env:parity` 0 (`--strict` 1 by design: the same ten unconfirmed
+  names as phase 40).
+- **The read-only hosted smoke spec was executed instead of merely existing.** Against a local
+  production build (`next start`, seeded SQLite, loopback origin) it passed **5/5** in 1.9 s: ten
+  public pages 200, `/api/auth/config` answering `enabled:false` with its reason, `/api/account`
+  503 signed out with no `availableMinor` in the body, `X-Veylora-Commit` present (locally `unknown`,
+  which is the honest value without a host-injected SHA), and no `alchemy.com/v2/` string in any
+  public page. The same spec against a real deployment, with `SMOKE_EXPECT_COMMIT` set, is still the
+  owner's step.
+- **`orders:backfill-origin` dry run** on the seeded database: 3 candidates, **0 planned updates**,
+  3 skipped as `unrecognised-note` (all "The order intent was recorded locally (seed)."), 0 writes.
+  That is the expected answer for seed rows: the script refuses to guess.
+- **The 72-hour plan's four code changes are all present**, each with tests: C1 withdrawals pause
+  (`withdrawal_pause` migration, `WITHDRAWALS_PAUSED` refusal before any hold, admin toggle on
+  `/admin/access`, audit rows); C2 the empty `ALCHEMY_API_KEY` no longer shadowing the legacy
+  Ethereum key (`firstUsableValue`, tests "an empty shared key does not shadow the legacy Ethereum
+  key" and "blank keys are reported as unconfigured rather than used"); C3 the hosted smoke spec
+  (above); C4 any-token arrivals recorded for valuation and credited once through
+  `/api/admin/deposits/credit` at the owner's figure — the plan's **fallback** branch, not automatic
+  price-source crediting, which stays a week-2 item as the plan itself says.
+- **Two missing phase records written**, so the proof tree now covers every phase file it shipped:
+  `proof/phase-15-fund-visibility-and-export.md` and `proof/phase-23-one-click-smart-ai-trading.md`.
+  Both are verification records — named tests, the gate numbers above, and an explicit list of the
+  browser steps they did not re-perform. `proof/README.md` now indexes phases 14, 15, 23 and 40 as well, so every proof file on disk has an entry.
+- **Unchanged owner actions:** hosted projects and their values (including the ten `--strict`
+  names), the three exposed provider keys and every other rotation, real-wallet sign-in on the
+  production domain, a real deposit and withdrawal, the Postgres restore drill, the client's ToS and
+  onboarding, and the go-ahead. No push or deploy was made in this pass; the upgrade and these
+  notes were committed locally, and the tag was not moved.
+
 ## Release v0.9.0 — the phases 01–40 tree committed and checked from a clone (2026-10-22)
 
 - The uncommitted tree is now committed — the exposed dump and ignore rules; schema, 26 migrations
