@@ -67,7 +67,10 @@ jobs:
         env:
           E2E_OUTPUT_DIR: ${{ runner.temp }}/veylora-e2e-results
       - name: Upload browser failure artifacts
-        if: failure()
+        # always(), not failure(): GitHub does not resolve an action whose step never runs, so a
+        # broken reference here would first surface on the one run that needs the artifacts.
+        # On a green run the directory is empty and `if-no-files-found: ignore` stores nothing.
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-failure-artifacts
