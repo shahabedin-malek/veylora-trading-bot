@@ -144,7 +144,9 @@ export function readEnvFileDatabaseUrl(contents) {
 export function inspectEnvFiles(directory = APP_DIR, readFile = readFileSync) {
   for (const name of ENV_FILE_NAMES) {
     const path = join(directory, name);
-    if (!existsSync(path)) continue;
+    // The reader is asked for every name, and an absent file is the ENOENT the `catch`
+    // below skips. Testing for existence first would make the answer depend on which
+    // files this machine happens to have, which is what a fresh clone has none of.
     let contents;
     try {
       contents = String(readFile(path, "utf8"));
