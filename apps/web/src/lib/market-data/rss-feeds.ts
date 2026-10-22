@@ -1,4 +1,5 @@
 import { PublicRssProvider, type RssFeedConfig } from "@/lib/market-data/providers/cointelegraph-rss";
+import { instrumentFetch } from "@/lib/observability/provider-call";
 
 export const FINANCIAL_RSS_FEEDS: readonly RssFeedConfig[] = [
   {
@@ -69,5 +70,5 @@ export const FINANCIAL_RSS_FEEDS: readonly RssFeedConfig[] = [
 export const FINANCIAL_RSS_PROVIDER_IDS = FINANCIAL_RSS_FEEDS.map((feed) => feed.id);
 
 export const FINANCIAL_RSS_PROVIDERS = FINANCIAL_RSS_FEEDS.map(
-  (feed) => new PublicRssProvider(feed),
+  (feed) => new PublicRssProvider(feed, instrumentFetch({ providerId: feed.id })),
 );

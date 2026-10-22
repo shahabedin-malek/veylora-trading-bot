@@ -1,14 +1,7 @@
 import { NextRequest } from "next/server";
-import {
-  getAuthConfig,
-  getAuthUnavailableReason,
-  isSameOriginRequest,
-} from "@/lib/auth/config";
-import {
-  AuthenticationRequiredError,
-  AuthorizationRequiredError,
-  requireSitePermission,
-} from "@/lib/auth/session-store";
+import { getAuthConfig, isSameOriginRequest } from "@/lib/auth/config";
+import { accessRefusalPayload, getAccessRefusal, authenticationGapResponse } from "@/lib/auth/access-gate";
+import { requireSitePermission } from "@/lib/auth/session-store";
 import {
   getRiskPolicySettings,
   saveRiskPolicySettings,
@@ -22,9 +15,10 @@ function json(data: unknown, status = 200) {
 }
 
 function authErrorResponse(error: unknown) {
-  if (error instanceof AuthenticationRequiredError) return json({ error: "Authentication required." }, 401);
-  if (error instanceof AuthorizationRequiredError) return json({ error: "Administrator role required." }, 403);
-  return null;
+  const refusal = getAccessRefusal(error);
+  // The permission key travels with the sentence, so a client (and the person
+  // reading the response) can act on exactly which permission is missing.
+  return refusal ? json(accessRefusalPayload(refusal), refusal.status) : null;
 }
 
 export async function GET() {
@@ -38,7 +32,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   const config = getAuthConfig();
-  if (!config) return json({ error: getAuthUnavailableReason() ?? "Authentication is unavailable." }, 503);
+  if (!config) return authenticationGapResponse();
   if (!isSameOriginRequest(request, config)) return json({ error: "Request origin is not allowed." }, 403);
 
   let admin;

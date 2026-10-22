@@ -4,6 +4,7 @@ import {
   INTEGRATION_FEATURES,
   type IntegrationFeatureSettings,
 } from "./features";
+import { auditCreate } from "@/lib/audit/record";
 
 const SINGLETON_ID = "global";
 const featureKeys = INTEGRATION_FEATURES.map(({ key }) => key);
@@ -20,6 +21,17 @@ export function selectIntegrationFeatureSettings(value: Record<string, unknown>)
   return Object.fromEntries(featureKeys.map((key) => [key, value[key]])) as IntegrationFeatureSettings;
 }
 
+/**
+ * The switches, validated as a closed set of booleans.
+ *
+ * Phase 21's `testnetOrdersEnabled` is one of them rather than a setting of its own: it is admin
+ * data like the rest, it is audited by the same save path, and it must be a boolean — a string
+ * `"false"` read as truthy is exactly how an order path ends up somewhere nobody chose.
+ *
+ * The order path reads this row and treats a failure as a refusal
+ * (`resolveOrderVenue`, `DATABASE_UNAVAILABLE`), not as "off": a switch that cannot be read is
+ * not permission to place an order.
+ */
 export function validateIntegrationFeatureSettings(value: unknown): IntegrationSettingsValidation {
   if (!isRecord(value)) return { valid: false, error: "Integration settings must be an object." };
   if (Object.keys(value).some((key) => !featureKeys.includes(key as (typeof featureKeys)[number]))) {
@@ -54,7 +66,7 @@ export async function saveIntegrationFeatureSettings(
       create: { id: SINGLETON_ID, ...safeSettings, updatedByUserId: actorUserId },
       update: { ...safeSettings, updatedByUserId: actorUserId },
     });
-    await transaction.auditEvent.create({
+    await auditCreate(transaction, {
       data: {
         actorUserId,
         action: "INTEGRATION_FEATURES_UPDATED",

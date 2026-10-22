@@ -1,10 +1,7 @@
 import { NextRequest } from "next/server";
-import { getAuthConfig, getAuthUnavailableReason, isSameOriginRequest } from "@/lib/auth/config";
-import {
-  AuthenticationRequiredError,
-  AuthorizationRequiredError,
-  requireAdmin,
-} from "@/lib/auth/session-store";
+import { getAuthConfig, isSameOriginRequest } from "@/lib/auth/config";
+import { getAccessRefusal, authenticationGapResponse } from "@/lib/auth/access-gate";
+import { requireAdmin } from "@/lib/auth/session-store";
 import {
   getWunderTradingFeatureSettings,
   saveWunderTradingFeatureSettings,
@@ -18,9 +15,8 @@ function json(data: unknown, status = 200) {
 }
 
 function authErrorResponse(error: unknown) {
-  if (error instanceof AuthenticationRequiredError) return json({ error: "Authentication required." }, 401);
-  if (error instanceof AuthorizationRequiredError) return json({ error: "Administrator role required." }, 403);
-  return null;
+  const refusal = getAccessRefusal(error);
+  return refusal ? json({ error: refusal.error }, refusal.status) : null;
 }
 
 export async function GET() {
@@ -34,7 +30,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   const config = getAuthConfig();
-  if (!config) return json({ error: getAuthUnavailableReason() ?? "Authentication is unavailable." }, 503);
+  if (!config) return authenticationGapResponse();
   if (!isSameOriginRequest(request, config)) return json({ error: "Request origin is not allowed." }, 403);
 
   let admin;

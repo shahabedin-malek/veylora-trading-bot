@@ -1,20 +1,26 @@
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { AccessNotice } from "@/components/access-notice";
 import { DepthText } from "@/components/depth-text";
 import { TerminalShell } from "@/components/terminal-shell";
-import { AuthenticationRequiredError, requireUser } from "@/lib/auth/session-store";
+import { checkPageAccess } from "@/lib/auth/access-gate";
 import { getIntegrationFeatureSettings } from "@/lib/integrations/settings";
 import { ResearchDesk } from "./research-desk";
 
+const CAPABILITY = "Web research needs a signed-in account";
+
 async function ResearchContent() {
   await connection();
-  try {
-    await requireUser();
-  } catch (error) {
-    if (error instanceof AuthenticationRequiredError) redirect("/login");
-    throw error;
+  const access = await checkPageAccess({ kind: "user" });
+  if (access.status === "unconfigured") {
+    return (
+      <TerminalShell active="research" section="RESEARCH">
+        <AccessNotice capability={CAPABILITY} reason={access.reason} />
+      </TerminalShell>
+    );
   }
+  if (access.status === "anonymous") redirect("/login");
 
   const settings = await getIntegrationFeatureSettings().catch(() => null);
   return (

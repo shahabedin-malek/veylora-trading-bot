@@ -1,21 +1,28 @@
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { AccessNotice } from "@/components/access-notice";
 import { TradingAccounts } from "@/components/trading-accounts";
 import { DepthText } from "@/components/depth-text";
 import { TerminalShell } from "@/components/terminal-shell";
-import { AuthenticationRequiredError, requireUser } from "@/lib/auth/session-store";
+import { checkPageAccess } from "@/lib/auth/access-gate";
 import { getWunderTradingFeatureSettings } from "@/lib/wundertrading/settings";
 import { WunderTradingDesk } from "./wundertrading-desk";
 
+const CAPABILITY = "WunderTrading account reads need a signed-in account";
+
 async function WunderTradingContent() {
   await connection();
-  try {
-    await requireUser();
-  } catch (error) {
-    if (error instanceof AuthenticationRequiredError) redirect("/login");
-    notFound();
+  const access = await checkPageAccess({ kind: "user" });
+  if (access.status === "unconfigured") {
+    return (
+      <TerminalShell active="wundertrading" section="WUNDERTRADING">
+        <AccessNotice capability={CAPABILITY} reason={access.reason} />
+      </TerminalShell>
+    );
   }
+  if (access.status === "anonymous") redirect("/login");
+  if (access.status === "forbidden") notFound();
 
   const settings = await getWunderTradingFeatureSettings().catch(() => null);
   return (

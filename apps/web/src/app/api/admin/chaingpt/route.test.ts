@@ -20,7 +20,10 @@ test("ChainGPT admin settings stay unavailable while authentication is disabled"
       headers: { "Content-Type": "application/json", Origin: localOrigin },
       body: "{}",
     }) as never);
-    assert.equal(getResponse.status, 401);
+    // A deployment with no usable auth configuration is a configuration gap, not a
+    // signed-out visitor: the read answers 503 and names the value it needs.
+    assert.equal(getResponse.status, 503);
+    assert.match((await getResponse.json() as { error: string }).error, /APP_BASE_URL|AUTH_EVM_CHAIN_IDS|SESSION_SECRET/);
     assert.equal(putResponse.status, 503);
   } finally {
     if (previous.chainIds === undefined) delete process.env.AUTH_EVM_CHAIN_IDS;

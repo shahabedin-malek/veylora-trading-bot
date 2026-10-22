@@ -1,21 +1,26 @@
 import { Buffer } from "node:buffer";
 import { NextRequest } from "next/server";
-import { getAuthConfig, getAuthUnavailableReason, isSameOriginRequest } from "@/lib/auth/config";
-import { AuthenticationRequiredError, requireUser } from "@/lib/auth/session-store";
+import { getAuthConfig, isSameOriginRequest } from "@/lib/auth/config";
+import { getAccessRefusal, authenticationGapResponse } from "@/lib/auth/access-gate";
+import { requireUser } from "@/lib/auth/session-store";
 import { prisma } from "@/lib/db";
 import { validateNewMarketAlert } from "@/lib/alerts/conditions";
+import { MAX_ACTIVE_ALERTS_PER_USER } from "@/lib/alerts/limits";
 import { formatMarketAlertInterval, getEffectiveMarketAlertIntervalMinutes, getMarketAlertIntervalMinutes } from "@/lib/alerts/scheduler-config";
+import { describeMarketAlertEvaluation, nextEvaluationAt } from "@/lib/alerts/evaluate";
+import { DEFAULT_NOTIFICATION_SETTINGS, getNotificationSettings, notificationChannelViews } from "@/lib/notifications/settings";
+import { isWithinQuietHours } from "@/lib/notifications/dispatch";
+import { auditCreate } from "@/lib/audit/record";
 
 const MAX_BODY_BYTES = 2_048;
-const MAX_ACTIVE_ALERTS_PER_USER = 50;
 
 function json(data: unknown, status = 200) {
   return Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
 }
 
 function authError(error: unknown) {
-  if (error instanceof AuthenticationRequiredError) return json({ error: "Authentication required." }, 401);
-  return null;
+  const refusal = getAccessRefusal(error);
+  return refusal ? json({ error: refusal.error }, refusal.status) : null;
 }
 
 async function readBody(request: Request): Promise<{ body: unknown } | { response: Response }> {
@@ -39,14 +44,64 @@ async function readBody(request: Request): Promise<{ body: unknown } | { respons
 export async function GET() {
   try {
     const user = await requireUser();
-    const alerts = await prisma.marketAlert.findMany({
-      where: { userId: user.id, status: { not: "DELETED" } },
+    const [alerts, settings] = await Promise.all([
+      prisma.marketAlert.findMany({
+        where: { userId: user.id, status: { not: "DELETED" } },
+        orderBy: { createdAt: "desc" },
+        // The latest crossing is enough for the list; the delivery log is the history.
+        include: { events: { orderBy: { triggeredAt: "desc" }, take: 1 } },
+      }),
+      getNotificationSettings().catch(() => ({ ...DEFAULT_NOTIFICATION_SETTINGS })),
+    ]);
+    const deliveries = await prisma.notificationDelivery.findMany({
+      where: { userId: user.id },
       orderBy: { createdAt: "desc" },
-      include: { event: true },
+      take: 20,
+      select: {
+        id: true,
+        channel: true,
+        target: true,
+        subject: true,
+        status: true,
+        providerId: true,
+        providerMessageId: true,
+        error: true,
+        attempt: true,
+        durationMs: true,
+        queuedAt: true,
+        deliveredAt: true,
+        createdAt: true,
+      },
     });
     const requestedIntervalMinutes = getMarketAlertIntervalMinutes();
     const intervalMinutes = getEffectiveMarketAlertIntervalMinutes();
-    return json({ alerts, cadence: formatMarketAlertInterval(intervalMinutes), intervalMinutes, requestedIntervalMinutes, schedule: "0 0 * * *" });
+    // Why nothing has happened, in the shared reason type, from the alert rows
+    // themselves — so the panel can say it without triggering an evaluation.
+    const evaluation = describeMarketAlertEvaluation(alerts, intervalMinutes);
+    const queued = deliveries.filter((delivery) => delivery.status === "QUEUED").length;
+    return json({
+      alerts: alerts.map((alert) => ({
+        ...alert,
+        // "Next evaluation" is derived, never stored: it is the rule's own last check plus
+        // the cadence this deployment delivers. Null means "due on the next pass".
+        nextEvaluationAt: nextEvaluationAt(alert.lastEvaluatedAt, intervalMinutes),
+      })),
+      cadence: formatMarketAlertInterval(intervalMinutes),
+      intervalMinutes,
+      requestedIntervalMinutes,
+      schedule: "0 0 * * *",
+      evaluation,
+      channels: notificationChannelViews(settings),
+      quietHours: {
+        enabled: settings.quietHoursEnabled,
+        start: settings.quietHoursStart,
+        end: settings.quietHoursEnd,
+        active: isWithinQuietHours(settings, new Date()),
+        queued,
+      },
+      defaultCooldownMinutes: settings.defaultCooldownMinutes,
+      deliveries,
+    });
   } catch (error) {
     return authError(error) ?? json({ error: "Market alerts are unavailable." }, 503);
   }
@@ -54,7 +109,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const config = getAuthConfig();
-  if (!config) return json({ error: getAuthUnavailableReason() ?? "Authentication is unavailable." }, 503);
+  if (!config) return authenticationGapResponse();
   if (!isSameOriginRequest(request, config)) return json({ error: "Request origin is not allowed." }, 403);
 
   let user;
@@ -70,6 +125,7 @@ export async function POST(request: NextRequest) {
   if (!validation.valid) return json({ error: validation.error }, 400);
 
   try {
+    const settings = await getNotificationSettings().catch(() => ({ ...DEFAULT_NOTIFICATION_SETTINGS }));
     const activeCount = await prisma.marketAlert.count({ where: { userId: user.id, status: "ACTIVE" } });
     if (activeCount >= MAX_ACTIVE_ALERTS_PER_USER) {
       return json({ error: `A maximum of ${MAX_ACTIVE_ALERTS_PER_USER} active alerts is allowed.` }, 409);
@@ -77,16 +133,27 @@ export async function POST(request: NextRequest) {
 
     const alert = await prisma.$transaction(async (transaction) => {
       const created = await transaction.marketAlert.create({
-        data: { userId: user.id, ...validation.value },
+        data: {
+          userId: user.id,
+          ...validation.value,
+          // The admin default is applied once, at creation. A rule stores its own copy so
+          // changing the default never rewrites the pacing of an existing alert.
+          cooldownMinutes: validation.value.cooldownMinutes ?? settings.defaultCooldownMinutes,
+        },
       });
-      await transaction.auditEvent.create({
+      await auditCreate(transaction, {
         data: {
           actorUserId: user.id,
           action: "MARKET_ALERT_CREATED",
           objectType: "MarketAlert",
           objectId: created.id,
           outcome: "SUCCESS",
-          redactedJson: JSON.stringify({ symbol: created.symbol, condition: created.condition, threshold: created.threshold }),
+          redactedJson: JSON.stringify({
+            symbol: created.symbol,
+            condition: created.condition,
+            threshold: created.threshold,
+            cooldownMinutes: created.cooldownMinutes,
+          }),
         },
       });
       return created;
@@ -99,7 +166,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const config = getAuthConfig();
-  if (!config) return json({ error: getAuthUnavailableReason() ?? "Authentication is unavailable." }, 503);
+  if (!config) return authenticationGapResponse();
   if (!isSameOriginRequest(request, config)) return json({ error: "Request origin is not allowed." }, 403);
 
   let user;
@@ -128,7 +195,7 @@ export async function DELETE(request: NextRequest) {
         data: { status: "DELETED", deletedAt },
       });
       if (updated.count !== 1) throw new Error("Market alert was already deleted.");
-      await transaction.auditEvent.create({
+      await auditCreate(transaction, {
         data: {
           actorUserId: user.id,
           action: "MARKET_ALERT_DELETED",

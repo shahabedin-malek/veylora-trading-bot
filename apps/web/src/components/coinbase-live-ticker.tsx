@@ -46,6 +46,8 @@ export function CoinbaseLiveTicker({
   const [updatedAt, setUpdatedAt] = useState(initialQuote?.provenance.observedAt ?? null);
   const [status, setStatus] = useState<StreamStatus>("CONNECTING");
   const [isFresh, setIsFresh] = useState(initialQuote?.provenance.freshness === "FRESH");
+  /** The last verified quote is still a reading when the stream drops; it is labelled, not hidden. */
+  const [freshness, setFreshness] = useState(initialQuote?.provenance.freshness ?? "UNKNOWN");
   const updatedAtRef = useRef(updatedAt);
 
   useEffect(() => {
@@ -97,6 +99,7 @@ export function CoinbaseLiveTicker({
         setUpdatedAt(message.time);
         updatedAtRef.current = message.time;
         setIsFresh(true);
+        setFreshness("FRESH");
         setStatus(sequenceGapPending ? "SEQUENCE GAP" : "LIVE");
         sequenceGapPending = false;
       });
@@ -128,23 +131,29 @@ export function CoinbaseLiveTicker({
   return (
     <div className={`coinbase-ticker${compact ? " coinbase-ticker--compact" : ""}`}>
       <div className="coinbase-ticker__price-row">
-        <strong>{price && isFresh ? price : "Not connected"}</strong>
+        {/* A level-1 book has no last trade. Show the best ask, labelled as one, rather than
+            an invented price or a blank while the stream is still connecting. */}
+        <strong>{price ?? (ask ? `${ask} ASK` : "NO LAST TRADE")}</strong>
         <span className={`stream-state${status === "LIVE" && isFresh ? " is-live" : ""}`}>
           {status === "LIVE" && !isFresh ? "STALE" : status}
         </span>
       </div>
       {compact ? (
         <span className="coinbase-ticker__stamp">
-          {updatedAt && isFresh ? `${productId} · ${new Date(updatedAt).toISOString()}` : `${productId} · waiting for a verified quote`}
+          {updatedAt
+            ? `${productId} · ${isFresh ? "observed" : `last verified (${freshness})`} ${new Date(updatedAt).toISOString()}`
+            : `${productId} · waiting for a verified quote`}
         </span>
       ) : (
         <>
           <div className="coinbase-ticker__book">
-            <div><span>BEST BID</span><strong>{isFresh ? bid ?? "—" : "—"}</strong></div>
-            <div><span>BEST ASK</span><strong>{isFresh ? ask ?? "—" : "—"}</strong></div>
+            <div><span>BEST BID</span><strong>{bid ?? "—"}</strong></div>
+            <div><span>BEST ASK</span><strong>{ask ?? "—"}</strong></div>
           </div>
           <span className="coinbase-ticker__stamp">
-            {updatedAt && isFresh ? `OBSERVED ${new Date(updatedAt).toISOString()}` : "Waiting for a fresh public ticker update."}
+            {updatedAt
+              ? `${isFresh ? "OBSERVED" : `LAST VERIFIED (${freshness})`} ${new Date(updatedAt).toISOString()}`
+              : "Waiting for a verified public ticker update."}
           </span>
         </>
       )}

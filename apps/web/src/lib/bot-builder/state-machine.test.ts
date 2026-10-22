@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertBotTransition,
   evaluateBacktestGate,
+  IllegalBotTransitionError,
   transitionBotState,
   validateBotConfiguration,
   type BotConfiguration,
@@ -49,9 +51,10 @@ test("paper transition requires a passing full-period backtest against user gate
   assert.deepEqual(evaluateBacktestGate(config, passingBacktest), { passed: true, reasons: [] });
   assert.deepEqual(transitionBotState("DRAFT", "PAPER", false), {
     allowed: false,
+    code: "BACKTEST_NOT_PASSED",
     reason: "A passing full-period backtest is required before paper state.",
   });
-  assert.deepEqual(transitionBotState("DRAFT", "PAPER", true), { allowed: true, state: "PAPER" });
+  assert.deepEqual(transitionBotState("DRAFT", "PAPER", true), { allowed: true, status: "PAPER" });
 
   const failingBacktest = { ...passingBacktest, maxDrawdownPercent: "21" } as BacktestResult;
   const gate = evaluateBacktestGate(config, failingBacktest);
@@ -64,4 +67,25 @@ test("armed/live transitions are denied and killed strategies are terminal", () 
   assert.equal(transitionBotState("PAPER", "LIVE", true).allowed, false);
   assert.equal(transitionBotState("DRAFT", "KILLED", false).allowed, true);
   assert.equal(transitionBotState("KILLED", "DRAFT", true).allowed, false);
+});
+
+test("a strategy move answers in the shared decision shape and throws when refused", () => {
+  // Same shape as an order transition: `allowed`, then either `status` or
+  // `code` + `reason`, so one caller handles both rulebooks.
+  const refused = transitionBotState("PAPER", "ARMED", true);
+  assert.equal(refused.allowed, false);
+  assert.equal(refused.allowed === false && refused.code, "LIVE_PATH_INCOMPLETE");
+
+  const terminal = transitionBotState("KILLED", "PAPER", true);
+  assert.equal(terminal.allowed === false && terminal.code, "TERMINAL_STATE");
+
+  assert.deepEqual(assertBotTransition("DRAFT", "PAPER", true), { allowed: true, status: "PAPER" });
+  assert.throws(
+    () => assertBotTransition("DRAFT", "PAPER", false),
+    (error: unknown) =>
+      error instanceof IllegalBotTransitionError &&
+      error.code === "BACKTEST_NOT_PASSED" &&
+      error.from === "DRAFT" &&
+      error.to === "PAPER",
+  );
 });

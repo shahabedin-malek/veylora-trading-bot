@@ -4,6 +4,7 @@ import {
   DEFAULT_CHAINGPT_FEATURE_SETTINGS,
   type ChainGPTFeatureSettings,
 } from "./features";
+import { auditCreate } from "@/lib/audit/record";
 
 const SINGLETON_ID = "global";
 const featureKeys = CHAINGPT_FEATURES.map(({ key }) => key);
@@ -58,7 +59,7 @@ export async function saveChainGPTFeatureSettings(
       update: { ...safeSettings, updatedByUserId: actorUserId },
     });
 
-    await transaction.auditEvent.create({
+    await auditCreate(transaction, {
       data: {
         actorUserId,
         action: "CHAINGPT_LINKS_UPDATED",

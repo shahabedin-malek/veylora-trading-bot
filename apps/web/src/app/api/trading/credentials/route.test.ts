@@ -32,7 +32,10 @@ test("trading credential API fails closed when authentication is not configured"
       headers: { Origin: origin },
     }) as never, { params: Promise.resolve({ credentialId: "credential-id" }) });
 
-    assert.equal(readResponse.status, 401);
+    // No usable auth configuration is a configuration gap, not a signed-out
+    // visitor: the read answers 503 and names the value it needs.
+    assert.equal(readResponse.status, 503);
+    assert.match(((await readResponse.json()) as { error: string }).error, /APP_BASE_URL|AUTH_EVM_CHAIN_IDS|SESSION_SECRET/);
     assert.equal(createResponse.status, 503);
     assert.equal(revokeResponse.status, 503);
     assert.equal(verifyResponse.status, 503);

@@ -1,5 +1,5 @@
 import { isIP } from "node:net";
-
+import { instrumentFetch, PROVIDER_IDS } from "@/lib/observability/provider-call";
 export const TAVILY_SEARCH_ENDPOINT = "https://api.tavily.com/search";
 export const TAVILY_EXTRACT_ENDPOINT = "https://api.tavily.com/extract";
 
@@ -51,7 +51,10 @@ async function readBoundedResponse(response: Response): Promise<string> {
 }
 
 async function postKeyless(endpoint: typeof TAVILY_SEARCH_ENDPOINT | typeof TAVILY_EXTRACT_ENDPOINT, body: Record<string, unknown>): Promise<unknown> {
-  const response = await fetch(endpoint, {
+  // Instrumented per call, so a test that replaces the global `fetch` is the
+  // function that actually runs (and is recorded).
+  const request = instrumentFetch({ providerId: PROVIDER_IDS.tavily });
+  const response = await request(endpoint, {
     method: "POST",
     cache: "no-store",
     redirect: "error",

@@ -4,6 +4,7 @@ import {
   WUNDERTRADING_FEATURES,
   type WunderTradingFeatureSettings,
 } from "./features";
+import { auditCreate } from "@/lib/audit/record";
 
 const SINGLETON_ID = "global";
 const featureKeys = WUNDERTRADING_FEATURES.map(({ key }) => key);
@@ -55,7 +56,7 @@ export async function saveWunderTradingFeatureSettings(
       update: { ...safeSettings, updatedByUserId: actorUserId },
     });
 
-    await transaction.auditEvent.create({
+    await auditCreate(transaction, {
       data: {
         actorUserId,
         action: "WUNDERTRADING_FEATURES_UPDATED",

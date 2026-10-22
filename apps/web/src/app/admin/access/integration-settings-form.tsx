@@ -86,8 +86,7 @@ export function IntegrationSettingsForm({
         </button>
         {message && <span role="status">{message}</span>}
         {error && <span className="login-error" role="alert">{error}</span>}
-      </div>
-      <p className="chaingpt-admin-disclosure">All switches default off. Database, auth, session, encryption, and provider secrets are deployment-managed and never displayed or edited here. Tavily uses keyless Search/Extract only.</p>
+      </div>        <p className="chaingpt-admin-disclosure">All switches default off. Database, auth, session, encryption, and provider secrets are deployment-managed and never displayed or edited here. Tavily uses keyless Search/Extract only. SandBase is called with the deployment&apos;s own key, which the readiness list reports as configured or missing.</p>
     </form>
   );
 }

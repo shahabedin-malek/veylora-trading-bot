@@ -1,3 +1,5 @@
+import { instrumentFetch, PROVIDER_IDS } from "@/lib/observability/provider-call";
+
 export const ALTERNATIVE_ME_FEAR_GREED_URL = "https://api.alternative.me/fng/?limit=1&format=json";
 
 const CACHE_TTL_MS = 5 * 60_000;
@@ -41,7 +43,8 @@ export function parseBitcoinFearGreedResponse(value: unknown): BitcoinFearGreedR
 }
 
 async function fetchReading(): Promise<BitcoinFearGreedReading> {
-  const response = await fetch(ALTERNATIVE_ME_FEAR_GREED_URL, {
+  const request = instrumentFetch({ providerId: PROVIDER_IDS.alternativeMe });
+  const response = await request(ALTERNATIVE_ME_FEAR_GREED_URL, {
     cache: "no-store",
     redirect: "error",
     signal: AbortSignal.timeout(5_000),

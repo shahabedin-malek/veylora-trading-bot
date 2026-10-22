@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { GET } from "./route";
 
-test("WunderTrading reads require an authenticated user", async () => {
+test("WunderTrading reads fail closed with the missing configuration when sign-in is unconfigured", async () => {
   const previous = {
     chainIds: process.env.AUTH_EVM_CHAIN_IDS,
     appBaseUrl: process.env.APP_BASE_URL,
@@ -14,7 +14,11 @@ test("WunderTrading reads require an authenticated user", async () => {
 
   try {
     const request = new Request("http://localhost/api/trading/wundertrading?view=profiles&credentialId=credential") as never;
-    assert.equal((await GET(request)).status, 401);
+    const response = await GET(request);
+    // A deployment that cannot sign anyone in is a configuration gap, not a
+    // signed-out visitor: 503, naming the value it needs.
+    assert.equal(response.status, 503);
+    assert.match(((await response.json()) as { error: string }).error, /APP_BASE_URL|AUTH_EVM_CHAIN_IDS|SESSION_SECRET/);
   } finally {
     if (previous.chainIds === undefined) delete process.env.AUTH_EVM_CHAIN_IDS;
     else process.env.AUTH_EVM_CHAIN_IDS = previous.chainIds;

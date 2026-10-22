@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { getAuthConfig, isSameOriginRequest } from "@/lib/auth/config";
-import { AuthenticationRequiredError, requireUser } from "@/lib/auth/session-store";
+import { getAccessRefusal, authenticationGapResponse } from "@/lib/auth/access-gate";
+import { requireUser } from "@/lib/auth/session-store";
 import { prisma } from "@/lib/db";
 import {
   isChecksummedAddress,
@@ -8,6 +9,7 @@ import {
   normalizeChecksummedAddress,
 } from "@/lib/portfolio/ethereum-token-allowlist";
 import { DEFAULT_EVM_MAINNET_CHAIN_ID, getEvmMainnet } from "@/lib/portfolio/evm-mainnets";
+import { auditCreate } from "@/lib/audit/record";
 
 const MAX_BODY_BYTES = 1_024;
 
@@ -17,14 +19,14 @@ function json(data: unknown, status = 200) {
 
 async function authorizeMutation(request: Request) {
   const config = getAuthConfig();
-  if (!config) return { response: json({ error: "Authentication is unavailable." }, 503) };
+  if (!config) return { response: authenticationGapResponse() };
   if (!isSameOriginRequest(request, config)) return { response: json({ error: "Request origin is not allowed." }, 403) };
 
   try {
     return { user: await requireUser() };
   } catch (error) {
-    if (error instanceof AuthenticationRequiredError) return { response: json({ error: "Authentication required." }, 401) };
-    return { response: json({ error: "Authorization is unavailable." }, 503) };
+    const refusal = getAccessRefusal(error);
+    return { response: refusal ? json({ error: refusal.error }, refusal.status) : json({ error: "Authorization is unavailable." }, 503) };
   }
 }
 
@@ -97,7 +99,7 @@ export async function POST(request: Request) {
       await transaction.evmTokenAllowlistEntry.create({
         data: { userId: authorized.user.id, chainId: parsed.chainId, contractAddress: parsed.address },
       });
-      await transaction.auditEvent.create({
+      await auditCreate(transaction, {
         data: {
           actorUserId: authorized.user.id,
           action: "ETHEREUM_TOKEN_ALLOWLIST_ADDED",
@@ -129,7 +131,7 @@ export async function DELETE(request: Request) {
 
     await prisma.$transaction(async (transaction) => {
       await transaction.evmTokenAllowlistEntry.delete({ where: { id: existing.id } });
-      await transaction.auditEvent.create({
+      await auditCreate(transaction, {
         data: {
           actorUserId: authorized.user.id,
           action: "ETHEREUM_TOKEN_ALLOWLIST_REMOVED",

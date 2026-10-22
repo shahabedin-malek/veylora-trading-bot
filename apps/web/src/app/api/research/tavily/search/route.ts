@@ -1,9 +1,12 @@
 import { NextRequest } from "next/server";
-import { getAuthConfig, getAuthUnavailableReason, isSameOriginRequest } from "@/lib/auth/config";
-import { AuthenticationRequiredError, requireUser } from "@/lib/auth/session-store";
+import { getAuthConfig, isSameOriginRequest } from "@/lib/auth/config";
+import { getAccessRefusal, authenticationGapResponse } from "@/lib/auth/access-gate";
+import { requireUser } from "@/lib/auth/session-store";
+import { developmentDetail } from "@/lib/dev-mode/development-detail";
 import { getIntegrationFeatureSettings } from "@/lib/integrations/settings";
-import { searchTavily, type TavilyTopic } from "@/lib/tavily/client";
+import { type TavilyTopic } from "@/lib/tavily/client";
 import { consumeTavilyRequest } from "@/lib/tavily/rate-limit";
+import { runResearchSearch } from "@/lib/ai/router";
 
 const MAX_BODY_BYTES = 4_096;
 const TOPICS = new Set<TavilyTopic>(["general", "news", "finance"]);
@@ -14,15 +17,15 @@ function json(data: unknown, status = 200) {
 
 export async function POST(request: NextRequest) {
   const authConfig = getAuthConfig();
-  if (!authConfig) return json({ error: getAuthUnavailableReason() ?? "Authentication is unavailable." }, 503);
+  if (!authConfig) return authenticationGapResponse();
   if (!isSameOriginRequest(request, authConfig)) return json({ error: "Request origin is not allowed." }, 403);
 
   let user;
   try {
     user = await requireUser();
   } catch (error) {
-    if (error instanceof AuthenticationRequiredError) return json({ error: "Authentication required." }, 401);
-    return json({ error: "User authorization is unavailable." }, 503);
+    const refusal = getAccessRefusal(error);
+    return refusal ? json({ error: refusal.error }, refusal.status) : json({ error: "User authorization is unavailable." }, 503);
   }
 
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
@@ -61,8 +64,15 @@ export async function POST(request: NextRequest) {
   if (!consumeTavilyRequest(user.id)) return json({ error: "Tavily request limit reached; try again in a minute." }, 429);
 
   try {
-    return json({ results: await searchTavily(query, topic as TavilyTopic) });
-  } catch {
-    return json({ error: "Tavily Search is temporarily unavailable." }, 502);
+    // Through the router, so this call is one row in the AI meter: provider, units, duration and
+    // cost, tied to the account and the research feature — the same accounting the assistant's
+    // own provider calls get. The switches above still decide whether it may run at all.
+    return json({
+      results: await runResearchSearch({ feature: "research", userId: user.id, query, topic: topic as TavilyTopic }),
+    });
+  } catch (error) {
+    // Development names the provider's own failure ("Tavily request failed with
+    // status 429.") instead of flattening every cause into one sentence.
+    return json({ error: developmentDetail(error, "Tavily Search is temporarily unavailable.") }, 502);
   }
 }

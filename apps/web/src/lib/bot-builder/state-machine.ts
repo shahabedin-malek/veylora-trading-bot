@@ -4,6 +4,7 @@ import {
   BACKTEST_MIN_COVERAGE_DAYS,
   type BacktestResult,
 } from "@/lib/backtesting/rsi-backtester";
+import type { TransitionDecision, TransitionRefusalCode } from "@/lib/orders/state-machine";
 import { DEFAULT_RISK_POLICY } from "@/lib/risk-controls/policy";
 import { USD_WATCHLIST } from "@/lib/market-data/watchlist";
 
@@ -12,6 +13,55 @@ const MAX_CONFIGURED_BUDGET_USD = "1000000000";
 
 export type BotState = "DRAFT" | "PAPER" | "ARMED" | "LIVE" | "KILLED";
 export type BotSchedule = "DAILY_CLOSE";
+
+/**
+ * The smart-trading activation lifecycle (phase 23).
+ *
+ * Two different questions live here, and keeping them apart is the whole point:
+ *
+ *  - {@link StrategyActivationIntent} is what the **owner** asked for, stored on the
+ *    activation row. It is only ever `RUNNING` or `STOPPED`, and a repeated start or stop
+ *    leaves it unchanged rather than stacking another decision on top.
+ *  - {@link StrategyRunState} is what the **system** observes right now: `running`, `idle`
+ *    with a reason, `stopped`, or `error` from the last pass. An account can be running
+ *    (intent) while idle (observation) because a venue key is missing — which is exactly
+ *    the state the phase requires the panel to name rather than hide behind "off".
+ *
+ * The bot builder's DRAFT/PAPER/ARMED/LIVE/KILLED states remain the per-bot lifecycle;
+ * this is the account-level switch that starts and stops the automation itself.
+ */
+export type StrategyActivationIntent = "RUNNING" | "STOPPED";
+export type StrategyRunState = "running" | "idle" | "stopped" | "error";
+
+export const STRATEGY_ACTIVATION_INTENTS: readonly StrategyActivationIntent[] = ["RUNNING", "STOPPED"];
+export const STRATEGY_RUN_STATES: readonly StrategyRunState[] = ["running", "idle", "stopped", "error"];
+
+export function isStrategyActivationIntent(value: unknown): value is StrategyActivationIntent {
+  return value === "RUNNING" || value === "STOPPED";
+}
+
+export function isStrategyRunState(value: unknown): value is StrategyRunState {
+  return typeof value === "string" && (STRATEGY_RUN_STATES as readonly string[]).includes(value);
+}
+
+/**
+ * Which of the four states the account is in, from the two facts that decide it.
+ *
+ * A blocker outranks a failed last pass because the blocker is the actionable thing: a
+ * pass that failed because there is no venue key will fail again until a key is added, so
+ * "idle — no venue connected" is the honest label. An error is shown only when the last
+ * pass itself failed for a reason the configuration list does not explain.
+ */
+export function evaluateStrategyRunState(input: {
+  intent: StrategyActivationIntent | null;
+  blockerCount: number;
+  lastOutcome: "running" | "idle" | "error" | null;
+}): StrategyRunState {
+  if (input.intent !== "RUNNING") return "stopped";
+  if (input.blockerCount > 0) return "idle";
+  if (input.lastOutcome === "error") return "error";
+  return "running";
+}
 
 export type BotConfiguration = {
   name: string;
@@ -36,7 +86,24 @@ export type BotConfigurationValidation =
   | { valid: false; error: string };
 
 export type BacktestGateResult = { passed: boolean; reasons: string[] };
-export type BotTransition = { allowed: true; state: BotState } | { allowed: false; reason: string };
+
+/**
+ * Bot-specific refusal codes, on top of the shared ones.
+ *
+ * A strategy's transition and an order's transition are different rulebooks, but
+ * they answer the same question — "may this move happen, and if not, why not?" —
+ * and they answer it in the same shape (`TransitionDecision` from
+ * `src/lib/orders/state-machine.ts`). A caller that handles one handles the
+ * other: read `allowed`, then either the `status` to move to or the `code` and
+ * `reason` that explain the refusal. Nothing here is a permission to be granted —
+ * every refusal names a piece of work that is not written yet (see
+ * {@link LIVE_PATH_REQUIREMENTS}).
+ */
+export type BotRefusalCode = TransitionRefusalCode | "BACKTEST_NOT_PASSED" | "LIVE_PATH_INCOMPLETE";
+
+export type BotTransition =
+  | { allowed: true; status: BotState }
+  | { allowed: false; code: BotRefusalCode; reason: string };
 
 // What the live path still lacks. Each line is a piece of work that is not written yet,
 // not a permission anyone has to grant: ARMED and LIVE reject transitions while this list
@@ -154,16 +221,74 @@ export function evaluateBacktestGate(config: BotConfiguration, result: BacktestR
   return { passed: reasons.length === 0, reasons };
 }
 
-export function transitionBotState(state: BotState, nextState: BotState, backtestPassed: boolean): BotTransition {
-  if (state === "KILLED") return { allowed: false, reason: "Killed strategies are terminal." };
-  if (nextState === "KILLED") return { allowed: true, state: "KILLED" };
+/**
+ * Decide whether a strategy may move, without performing the move. Pure, like the
+ * order machine's equivalent: the same question can be asked by the panel that
+ * renders the button, by the route that would apply it and by a unit test, and all
+ * three get one answer.
+ */
+export function evaluateBotTransition(state: BotState, nextState: BotState, backtestPassed: boolean): BotTransition {
+  if (state === "KILLED") {
+    return { allowed: false, code: "TERMINAL_STATE", reason: "KILLED is terminal, so it cannot be left." };
+  }
+  if (nextState === "KILLED") return { allowed: true, status: "KILLED" };
   if (state === "DRAFT" && nextState === "PAPER") {
     return backtestPassed
-      ? { allowed: true, state: "PAPER" }
-      : { allowed: false, reason: "A passing full-period backtest is required before paper state." };
+      ? { allowed: true, status: "PAPER" }
+      : {
+          allowed: false,
+          code: "BACKTEST_NOT_PASSED",
+          reason: "A passing full-period backtest is required before paper state.",
+        };
   }
   if (nextState === "ARMED" || nextState === "LIVE") {
-    return { allowed: false, reason: LIVE_PATH_REQUIREMENTS.join(" ") };
+    return { allowed: false, code: "LIVE_PATH_INCOMPLETE", reason: LIVE_PATH_REQUIREMENTS.join(" ") };
   }
-  return { allowed: false, reason: `Transition ${state} → ${nextState} is not allowed.` };
+  return { allowed: false, code: "NOT_ALLOWED", reason: `Transition ${state} → ${nextState} is not allowed.` };
 }
+
+/**
+ * The same decision, named for the callers that already use it. Kept so the
+ * promotion path and the panel keep one implementation of the rule.
+ */
+export function transitionBotState(state: BotState, nextState: BotState, backtestPassed: boolean): BotTransition {
+  return evaluateBotTransition(state, nextState, backtestPassed);
+}
+
+/** A strategy move the lifecycle does not allow, thrown instead of silently ignored. */
+export class IllegalBotTransitionError extends Error {
+  readonly code: BotRefusalCode;
+  readonly from: BotState;
+  readonly to: BotState;
+
+  constructor(input: { code: BotRefusalCode; from: BotState; to: BotState; reason: string }) {
+    super(input.reason);
+    this.name = "IllegalBotTransitionError";
+    this.code = input.code;
+    this.from = input.from;
+    this.to = input.to;
+  }
+}
+
+/**
+ * Apply a strategy move, or throw.
+ *
+ * A caller about to change something uses this **before** the change: a refusal
+ * here means nothing was activated, killed or written. The same `code` and
+ * `reason` the panel would show come back on the error, so a route can answer
+ * with them instead of re-deriving the sentence.
+ */
+export function assertBotTransition(
+  state: BotState,
+  nextState: BotState,
+  backtestPassed: boolean,
+): Extract<BotTransition, { allowed: true }> {
+  const decision = evaluateBotTransition(state, nextState, backtestPassed);
+  if (!decision.allowed) {
+    throw new IllegalBotTransitionError({ code: decision.code, from: state, to: nextState, reason: decision.reason });
+  }
+  return decision;
+}
+
+/** Re-exported so a caller can branch on the shared decision shape without a second import. */
+export type { TransitionDecision };

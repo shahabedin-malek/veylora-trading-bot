@@ -1,3 +1,5 @@
+import { reason, type Reason } from "@/lib/observability/reason";
+
 export type DecimalText = string;
 
 export type DataFreshness = "FRESH" | "DELAYED" | "STALE" | "UNKNOWN";
@@ -76,6 +78,35 @@ export type NewsRequest = {
   since?: string;
   limit?: number;
 };
+
+/**
+ * Why a market-data call came back with nothing, in the shared reason type.
+ *
+ * A caller that only shows "unavailable" tells the owner nothing they can act
+ * on; this is the mapping that turns the feed's own vocabulary into the one
+ * sentence the UI renders (phase 04).
+ */
+export function describeMarketDataFailure(
+  result: Extract<MarketDataResult<never>, { status: "unavailable" }>,
+  providerId?: string,
+): Reason {
+  const options = providerId ? { providerId } : {};
+  switch (result.reason) {
+    case "not-configured":
+      return reason("MISSING_CONFIGURATION", {
+        ...options,
+        message: "No market-data provider is configured for this deployment.",
+      });
+    case "not-connected":
+      return reason("PROVIDER_NOT_CONNECTED", options);
+    case "rate-limited":
+      return reason("PROVIDER_RATE_LIMITED", options);
+    case "invalid-response":
+      return reason("INVALID_PROVIDER_RESPONSE", options);
+    case "provider-error":
+      return reason("PROVIDER_ERROR", { ...options, retryable: result.retryable });
+  }
+}
 
 export interface MarketDataProvider {
   readonly id: string;

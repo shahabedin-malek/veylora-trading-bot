@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
-import { AuthenticationRequiredError, requireUser } from "@/lib/auth/session-store";
+import { getAccessRefusal } from "@/lib/auth/access-gate";
+import { requireUser } from "@/lib/auth/session-store";
 import { prisma } from "@/lib/db";
+import { credentialAvailability } from "@/lib/trading/read-only-credentials";
 import { decryptVenueCredentials } from "@/lib/trading/credential-vault";
 import {
   listWunderTradingApiProfiles,
@@ -22,8 +24,8 @@ function json(data: unknown, status = 200) {
 }
 
 function authErrorResponse(error: unknown) {
-  if (error instanceof AuthenticationRequiredError) return json({ error: "Authentication required." }, 401);
-  return null;
+  const refusal = getAccessRefusal(error);
+  return refusal ? json({ error: refusal.error }, refusal.status) : null;
 }
 
 export async function GET(request: NextRequest) {
@@ -45,14 +47,19 @@ export async function GET(request: NextRequest) {
   if (!settings[VIEW_SETTINGS[view]]) return json({ error: "This WunderTrading read function is switched off in Access & Integrations." }, 403);
 
   const credential = await prisma.tradingVenueCredential.findFirst({
-    where: { id: credentialId, userId: user.id, venue: "wundertrading", revokedAt: null },
+    where: { id: credentialId, userId: user.id, venue: "wundertrading" },
     select: {
+      revokedAt: true,
       credentialCiphertext: true,
       credentialIv: true,
       credentialAuthTag: true,
     },
   });
   if (!credential) return json({ error: "WunderTrading credential was not found." }, 404);
+  // A revoked key stops being used on the next request — decided in one place, so this
+  // route does not carry its own copy of the rule.
+  const availability = credentialAvailability(credential);
+  if (!availability.available) return json(availability.body, availability.status);
 
   try {
     const material = decryptVenueCredentials("wundertrading", {

@@ -46,6 +46,21 @@ const initialState: PortfolioResponse = {
   networks: [],
 };
 
+/**
+ * The server's own words when it refused, so a missing configuration name
+ * ("Authentication is not configured: …", "ALCHEMY_API_KEY is not configured")
+ * reaches the panel instead of a generic sentence.
+ */
+function serverReason(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const record = body as Record<string, unknown>;
+  for (const key of ["message", "error"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
 async function fetchPortfolio(): Promise<PortfolioResponse> {
   try {
     const response = await fetch("/api/portfolio/ethereum", {
@@ -60,9 +75,15 @@ async function fetchPortfolio(): Promise<PortfolioResponse> {
       ["available", "not-connected", "unavailable"].includes(String(body.status))) {
       return body as PortfolioResponse;
     }
-    return { status: "unavailable", authenticated: false, allowlistAvailable: false, message: "Wallet portfolio is unavailable.", networks: [] };
-  } catch {
-    return { status: "unavailable", authenticated: false, allowlistAvailable: false, message: "Wallet portfolio is unavailable.", networks: [] };
+    return { status: "unavailable", authenticated: false, allowlistAvailable: false, message: serverReason(body) ?? "Wallet portfolio is unavailable.", networks: [] };
+  } catch (cause) {
+    return {
+      status: "unavailable",
+      authenticated: false,
+      allowlistAvailable: false,
+      message: cause instanceof Error ? `Wallet portfolio could not be requested: ${cause.message}` : "Wallet portfolio is unavailable.",
+      networks: [],
+    };
   }
 }
 
@@ -220,7 +241,7 @@ export function EthereumPortfolioPanel() {
               <li key={network.chainId}>
                 <div className="ethereum-network-list__details">
                   <strong>{network.name}</strong>
-                  <small>CHAIN {network.chainId} · {network.status === "available" ? `${network.nativeBalance} ${network.nativeSymbol}` : network.status === "not-connected" ? "NOT CONNECTED · API KEY REQUIRED" : "BALANCE UNAVAILABLE"}</small>
+                  <small>CHAIN {network.chainId} · {network.status === "available" ? `${network.nativeBalance} ${network.nativeSymbol}` : network.status === "not-connected" ? "NOT CONNECTED · ALCHEMY_API_KEY NOT SET" : "BALANCE UNAVAILABLE"}</small>
                 </div>
                 {network.chainId !== DEFAULT_EVM_MAINNET_CHAIN_ID && (
                   <button

@@ -17,11 +17,12 @@ import { FINANCIAL_RSS_FEEDS, FINANCIAL_RSS_PROVIDER_IDS } from "@/lib/market-da
 import { USD_WATCHLIST } from "@/lib/market-data/watchlist";
 import type { MarketQuote } from "@/lib/market-data/provider";
 import { getCurrentUser } from "@/lib/auth/session-store";
-import { SessionTopbarAction, TradingReadiness } from "@/components/session-readiness";
-import { EthereumPortfolioPanel } from "@/components/ethereum-portfolio-panel";
+import { OnboardingProgress, SessionTopbarAction, TradingReadiness } from "@/components/session-readiness";
+import { PortfolioPanel } from "@/components/portfolio-panel";
 import { MarketAlertsPanel } from "@/components/market-alerts-panel";
 import { getRiskControlsStatus } from "@/lib/risk-controls/policy";
 import { getRiskPolicySettings } from "@/lib/risk-controls/settings";
+import { auditCreate } from "@/lib/audit/record";
 
 const navigation = [
   { label: "Overview", href: "#overview", icon: LayoutDashboard },
@@ -112,7 +113,7 @@ async function recordTradingDashboardView() {
   try {
     const user = await getCurrentUser();
     if (!user) return;
-    await prisma.auditEvent.create({
+    await auditCreate(prisma, {
       data: {
         actorUserId: user.id,
         action: "TRADING_DASHBOARD_VIEWED",
@@ -140,7 +141,7 @@ async function RiskControlsConnectionStatus() {
       />
     );
   }
-  const riskStatus = getRiskControlsStatus(policy);
+  const riskStatus = getRiskControlsStatus(policy, { liveExecutionEnabled: policy.liveExecutionEnabled });
   return (
     <ConnectionStatus
       detail={riskStatus.detail}
@@ -163,10 +164,10 @@ async function RiskPolicySummary() {
             <div className="section-kicker">RISK SERVICE / FAIL-CLOSED</div>
             <h2 id="policy-title">Risk policy &amp; safeguards</h2>
           </div>
-          <span className="section-state">ORDER ROUTE OFF</span>
+          <span className="section-state">POLICY UNAVAILABLE</span>
         </div>
         <p className="policy-disclaimer" role="status">
-          Risk policy could not be loaded from the database, so the order evaluator has no configured limits and refuses every intent until the settings row loads.
+          Risk policy could not be loaded from the database, so the order evaluator has no configured limits and refuses every intent until the settings row loads. Order routing cannot be read either, so a live switch cannot be confirmed.
         </p>
       </section>
     );
@@ -178,10 +179,13 @@ async function RiskPolicySummary() {
           <div className="section-kicker">RISK SERVICE / FAIL-CLOSED</div>
           <h2 id="policy-title">Risk policy &amp; safeguards</h2>
         </div>
-        <span className="section-state">ORDER ROUTE OFF</span>
+        <span className="section-state">{policy.liveExecutionEnabled ? "LIVE ORDERS ON" : "LIVE ORDERS OFF"}</span>
       </div>
       <p className="policy-disclaimer">
-        Admin policy is loaded and the evaluator fails closed on any check it cannot resolve. No order route is wired, so these settings cannot submit trades yet.
+        Admin policy is loaded and the evaluator fails closed on any check it cannot resolve. Real-money execution is a
+        switch the owner edits in the risk panel: {policy.liveExecutionEnabled
+          ? "it is on, so orders can reach Binance with the account's own live key and real funds can move."
+          : "it is off, so live venues cannot be selected and orders go to the paper or testnet venue."}
       </p>
       <dl className="policy-grid">
         <div><dt>MAX RISK / TRADE</dt><dd>{policy.maxRiskPerTradePercent}% of configured capital</dd></div>
@@ -198,9 +202,10 @@ async function RiskPolicySummary() {
         <div><dt>LIVE ARM</dt><dd>Checked on every intent</dd></div>
         <div><dt>KILL SWITCH</dt><dd>{policy.killSwitchActive ? "ACTIVE · BLOCKS INTENTS" : "READY"}</dd></div>
         <div><dt>AUDIT WRITES</dt><dd>Checked on every intent</dd></div>
+        <div><dt>LIVE EXECUTION</dt><dd>{policy.liveExecutionEnabled ? "ON · REAL FUNDS CAN MOVE" : "Off · switch in /admin/risk"}</dd></div>
       </dl>
       <p className="policy-note">
-        Every opening intent is refused without a valid stop-loss and maximum-loss bound. A daily-loss halt blocks new intents at the configured threshold, and the first-day limit applies after arming. These settings configure the evaluator; no order route reads them yet.
+        Every opening intent is refused without a valid stop-loss and maximum-loss bound. A daily-loss halt blocks new intents at the configured threshold, and the first-day limit applies after arming. These settings configure the evaluator that guards the paper bot; the order route reads the live switch and the open-exposure percentage, and reports what it notices rather than gating on it.
       </p>
     </section>
   );
@@ -295,6 +300,11 @@ export default function Home() {
 
         <div className="sidebar-bottom">
           <div className="sidebar-label">SESSION</div>
+          {/* This page renders its own copy of the sidebar rather than the shared
+              shell, so the first-run checklist's entry point has to be stated here
+              too — otherwise the one page a returning account lands on would be the
+              one page that does not point at it. */}
+          <OnboardingProgress />
           <TradingReadiness />
           <div className="sidebar-version">LOCAL FOUNDATION / 01</div>
         </div>
@@ -375,7 +385,7 @@ export default function Home() {
               </Suspense>
             </section>
 
-            <EthereumPortfolioPanel />
+            <PortfolioPanel />
 
             <section className="data-section activity-section" id="activity" aria-labelledby="activity-title">
               <div className="section-heading">

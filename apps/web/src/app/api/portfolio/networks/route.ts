@@ -1,12 +1,16 @@
 import { Buffer } from "node:buffer";
 import { getAuthConfig, isSameOriginRequest } from "@/lib/auth/config";
-import { AuthenticationRequiredError, requireUser } from "@/lib/auth/session-store";
+import { getAccessRefusal, authenticationGapResponse } from "@/lib/auth/access-gate";
+import { requireUser } from "@/lib/auth/session-store";
 import { prisma } from "@/lib/db";
+import { networkHealthSnapshot } from "@/lib/rpc/health";
+import { getNetworkRegistry } from "@/lib/rpc/networks";
 import {
   DEFAULT_EVM_MAINNET_CHAIN_ID,
   getEvmMainnet,
   MAX_ADDITIONAL_EVM_MAINNETS,
 } from "@/lib/portfolio/evm-mainnets";
+import { auditCreate } from "@/lib/audit/record";
 
 const MAX_BODY_BYTES = 1_024;
 
@@ -16,13 +20,13 @@ function json(data: unknown, status = 200) {
 
 async function authorizeMutation(request: Request) {
   const config = getAuthConfig();
-  if (!config) return { response: json({ error: "Authentication is unavailable." }, 503) };
+  if (!config) return { response: authenticationGapResponse() };
   if (!isSameOriginRequest(request, config)) return { response: json({ error: "Request origin is not allowed." }, 403) };
   try {
     return { user: await requireUser() };
   } catch (error) {
-    if (error instanceof AuthenticationRequiredError) return { response: json({ error: "Authentication required." }, 401) };
-    return { response: json({ error: "Authorization is unavailable." }, 503) };
+    const refusal = getAccessRefusal(error);
+    return { response: refusal ? json({ error: refusal.error }, refusal.status) : json({ error: "Authorization is unavailable." }, 503) };
   }
 }
 
@@ -55,6 +59,31 @@ async function readChainId(request: Request) {
   return { chainId };
 }
 
+/**
+ * The registry as the switcher and the admin panel read it.
+ *
+ * Names, chain ids and reasons only: no endpoint, no key, no account data. The
+ * list is whatever the environment configures, so adding a network variable is
+ * the whole change.
+ */
+export async function GET() {
+  try {
+    await requireUser();
+  } catch (error) {
+    const refusal = getAccessRefusal(error);
+    return refusal ? json({ error: refusal.error }, refusal.status) : json({ error: "Authorization is unavailable." }, 503);
+  }
+
+  const registry = getNetworkRegistry();
+  return json({
+    readAt: registry.readAt,
+    networks: registry.entries,
+    totals: registry.totals,
+    ignoredVariables: registry.ignoredVariables,
+    health: networkHealthSnapshot(),
+  });
+}
+
 export async function POST(request: Request) {
   const authorized = await authorizeMutation(request);
   if ("response" in authorized) return authorized.response;
@@ -75,7 +104,7 @@ export async function POST(request: Request) {
     const network = getEvmMainnet(parsed.chainId)!;
     await prisma.$transaction(async (transaction) => {
       await transaction.evmPortfolioNetwork.create({ data: { userId: authorized.user.id, chainId: parsed.chainId } });
-      await transaction.auditEvent.create({
+      await auditCreate(transaction, {
         data: {
           actorUserId: authorized.user.id,
           action: "PORTFOLIO_NETWORK_ENABLED",
@@ -110,7 +139,7 @@ export async function DELETE(request: Request) {
       const removedTokens = await transaction.evmTokenAllowlistEntry.deleteMany({
         where: { userId: authorized.user.id, chainId: parsed.chainId },
       });
-      await transaction.auditEvent.create({
+      await auditCreate(transaction, {
         data: {
           actorUserId: authorized.user.id,
           action: "PORTFOLIO_NETWORK_DISABLED",

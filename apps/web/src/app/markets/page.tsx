@@ -11,10 +11,21 @@ import { FINANCIAL_RSS_PROVIDER_IDS } from "@/lib/market-data/rss-feeds";
 import { getBitcoinFearGreedIndex } from "@/lib/market-data/alternative-me-fear-greed";
 import { USD_WATCHLIST } from "@/lib/market-data/watchlist";
 import { getIntegrationFeatureSettings } from "@/lib/integrations/settings";
+import { developmentDetail } from "@/lib/dev-mode/development-detail";
+import { describeMarketDataFailure } from "@/lib/market-data/provider";
 import { buildYearMarketReport } from "@/lib/market-data/year-report";
 import { MarketChart, type ChartCandle } from "./market-chart";
 
 export const instant = false;
+
+/** A period change carries its sign in text, so colour is never the only reading. */
+function signedPercent(value: string): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return value;
+  if (numeric > 0) return `+${value}%`;
+  if (numeric < 0) return `−${value.replace(/^-/, "")}%`;
+  return `${value}%`;
+}
 
 async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WATCHLIST)[number] }) {
   const end = new Date();
@@ -22,7 +33,7 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
   start.setUTCHours(0, 0, 0, 0);
   const integrationSettings = await getIntegrationFeatureSettings().catch(() => null);
   const fearGreedEnabled = integrationSettings?.alternativeMeSentimentEnabled === true;
-  const [quoteResult, candleRecords, reportRecords, fearGreed] = await Promise.all([
+  const [quoteResult, candleRead, reportRead, fearGreed] = await Promise.all([
     coinbaseMarketData.getQuotes({ instruments: [selectedMarket.productId] }),
     prisma.marketCandleRecord.findMany({
       where: {
@@ -33,7 +44,12 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
       },
       orderBy: { openTime: "asc" },
       take: 365,
-    }).catch(() => []),
+    })
+      .then((rows) => ({ ok: true as const, rows }))
+      .catch((error: unknown) => ({
+        ok: false as const,
+        failure: developmentDetail(error, "Stored candle history could not be read from the database."),
+      })),
     prisma.marketCandleRecord.findMany({
       where: {
         providerId: "coinbase-exchange",
@@ -43,19 +59,36 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
       },
       orderBy: [{ symbol: "asc" }, { openTime: "asc" }],
       take: USD_WATCHLIST.length * 365,
-    }).catch(() => []),
+    })
+      .then((rows) => ({ ok: true as const, rows }))
+      .catch((error: unknown) => ({
+        ok: false as const,
+        failure: developmentDetail(error, "The one-year report could not be read from the database."),
+      })),
     fearGreedEnabled ? getBitcoinFearGreedIndex().catch(() => null) : Promise.resolve(null),
   ]);
-  const financialNewsRecords = await prisma.marketNewsRecord.findMany({
+  const newsRead = await prisma.marketNewsRecord.findMany({
     where: {
       providerId: { in: [...FINANCIAL_RSS_PROVIDER_IDS] },
       imageUrl: { not: null },
     },
     orderBy: [{ publishedAt: "desc" }, { fetchedAt: "desc" }],
     take: 12,
-  }).catch(() => []);
+  })
+    .then((rows) => ({ ok: true as const, rows }))
+    .catch((error: unknown) => ({
+      ok: false as const,
+      failure: developmentDetail(error, "The financial newswire could not be read from the database."),
+    }));
 
+  const candleRecords = candleRead.ok ? candleRead.rows : [];
+  const reportRecords = reportRead.ok ? reportRead.rows : [];
+  const financialNewsRecords = newsRead.ok ? newsRead.rows : [];
   const quote = quoteResult.status === "available" ? quoteResult.data[0] ?? null : null;
+  const quoteFailure = quoteResult.status === "unavailable" ? describeMarketDataFailure(quoteResult).message : null;
+  const chartFailure = candleRead.ok ? null : candleRead.failure;
+  const reportFailure = reportRead.ok ? null : reportRead.failure;
+  const newsFailure = newsRead.ok ? null : newsRead.failure;
   const freshQuote = quote?.provenance.freshness === "FRESH" ? quote : null;
   const yearReports = USD_WATCHLIST.map((instrument) => ({
     ...instrument,
@@ -104,7 +137,7 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
               </Link>
             ))}
           </nav>
-          <MarketChart candles={candles} productId={selectedMarket.productId} />
+          <MarketChart candles={candles} failure={chartFailure} productId={selectedMarket.productId} />
         </section>
 
         <GlareHover className="market-quote-glare">
@@ -113,6 +146,12 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
           <h2>{selectedMarket.productId}</h2>
           <p className="market-quote-rail__source">Coinbase Exchange · production</p>
           <CoinbaseLiveTicker key={selectedMarket.productId} initialQuote={freshQuote} productId={selectedMarket.productId} />
+          {quoteFailure ? (
+            <p className="desk-note desk-note--failed" role="status">
+              <strong>QUOTE WITHHELD</strong> {quoteFailure} The book and the price line are empty rather than carried
+              forward from an older read.
+            </p>
+          ) : null}
           <dl className="market-source-details">
             <div><dt>REST SNAPSHOT</dt><dd>{quote?.provenance.freshness === "FRESH" ? "FRESH" : "WITHHELD"}</dd></div>
             <div><dt>HISTORY SOURCE</dt><dd>Coinbase daily candles</dd></div>
@@ -163,19 +202,24 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
           <span className="section-state">{USD_WATCHLIST.length} MARKETS</span>
         </div>
         <p className="market-watch-note">Period change uses each asset&apos;s first and last stored daily close in the trailing one-year window. Coverage can vary; this is not a live market-cap ranking.</p>
+        {reportFailure ? (
+          <p className="desk-note desk-note--failed" role="alert">
+            <strong>ONE-YEAR REPORT UNAVAILABLE</strong> {reportFailure}
+          </p>
+        ) : null}
         <div className="market-history-table-wrap">
           <table className="market-history-table">
             <thead><tr><th>MARKET</th><th>PERIOD CHANGE</th><th>HIGH</th><th>LOW</th><th>VOLUME</th><th>DAILY BARS</th><th>OBSERVED PERIOD</th></tr></thead>
             <tbody>
               {yearReports.map(({ productId, report }) => (
                 <tr key={productId}>
-                  <td><Link href={`/markets?asset=${encodeURIComponent(productId)}`}>{productId}</Link></td>
-                  <td>{report ? `${report.periodChangePercent}%` : "UNAVAILABLE"}</td>
-                  <td>{report?.high ?? "—"}</td>
-                  <td>{report?.low ?? "—"}</td>
-                  <td>{report?.volume ?? "—"}</td>
-                  <td>{report?.bars ?? 0}</td>
-                  <td>{report ? `${report.startDate} → ${report.endDate}` : "Insufficient stored history"}</td>
+                  <td data-label="MARKET"><Link href={`/markets?asset=${encodeURIComponent(productId)}`}>{productId}</Link></td>
+                  <td data-label="PERIOD CHANGE">{report ? signedPercent(report.periodChangePercent) : "UNAVAILABLE"}</td>
+                  <td data-label="HIGH">{report?.high ?? "—"}</td>
+                  <td data-label="LOW">{report?.low ?? "—"}</td>
+                  <td data-label="VOLUME">{report?.volume ?? "—"}</td>
+                  <td data-label="DAILY BARS">{report?.bars ?? 0}</td>
+                  <td data-label="OBSERVED PERIOD">{report ? `${report.startDate} → ${report.endDate}` : "Insufficient stored history"}</td>
                 </tr>
               ))}
             </tbody>
@@ -198,13 +242,13 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
               <tbody>
                 {history.map((candle) => (
                   <tr key={candle.openTime.toISOString()}>
-                    <td>{candle.openTime.toISOString().slice(0, 10)}</td>
-                    <td>{candle.open}</td>
-                    <td>{candle.high}</td>
-                    <td>{candle.low}</td>
-                    <td>{candle.close}</td>
-                    <td>{candle.volume}</td>
-                    <td>{candle.providerId} · {candle.freshness}</td>
+                    <td data-label="DATE">{candle.openTime.toISOString().slice(0, 10)}</td>
+                    <td data-label="OPEN">{candle.open}</td>
+                    <td data-label="HIGH">{candle.high}</td>
+                    <td data-label="LOW">{candle.low}</td>
+                    <td data-label="CLOSE">{candle.close}</td>
+                    <td data-label="VOLUME">{candle.volume}</td>
+                    <td data-label="PROVENANCE">{candle.providerId} · {candle.freshness}</td>
                   </tr>
                 ))}
               </tbody>
@@ -226,6 +270,11 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
           </div>
           <span className="section-state">IMAGE-BACKED RSS / DELAYED</span>
         </div>
+        {newsFailure ? (
+          <p className="desk-note desk-note--failed" role="alert">
+            <strong>NEWSWIRE UNAVAILABLE</strong> {newsFailure}
+          </p>
+        ) : null}
         {financialNewsRecords.length > 0 ? (
           <ul className="market-news-gallery" aria-label="Financial RSS stories with images">
             {financialNewsRecords.map((item) => item.imageUrl && (
@@ -259,7 +308,7 @@ async function LiveMarkets({ selectedMarket }: { selectedMarket: (typeof USD_WAT
 
       <footer className="page-footer">
         <span>PUBLIC MARKET DATA</span>
-        <Link href="/">RETURN TO OVERVIEW</Link>
+        <Link href="/terminal">RETURN TO OVERVIEW</Link>
       </footer>
     </>
   );

@@ -1,4 +1,9 @@
-import { resolveRpcEndpoint } from "./networks";
+import type { Logger } from "@/lib/observability/logger";
+import { instrumentFetch, PROVIDER_IDS, reasonForProviderResponse, reasonForThrownCall } from "@/lib/observability/provider-call";
+import { describeReason } from "@/lib/observability/reason";
+import { resolveRequestContext } from "@/lib/observability/request-context";
+import { networkSkipDecision, recordNetworkFailure, recordNetworkSuccess } from "./health";
+import { resolveRpcEndpoint, rpcConfigurationVariableName } from "./networks";
 
 /**
  * Multi-network JSON-RPC proxy.
@@ -28,15 +33,25 @@ function json(data: unknown, status = 200) {
   return Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-function sameOriginRequest(request: Request): boolean {
+/**
+ * The same-origin check, refusing with the reason it refused.
+ *
+ * A missing `APP_BASE_URL` is a configuration gap, not a bad caller, so it answers
+ * 503 naming the variable instead of a bare 403 that hides the cause.
+ */
+function sameOriginRefusal(request: Request): { status: number; error: string } | null {
   const origin = request.headers.get("origin");
   const appBaseUrl = process.env.APP_BASE_URL;
-  if (!origin || !appBaseUrl) return false;
+  if (!origin) return { status: 403, error: "A same-origin request is required." };
+  if (!appBaseUrl) return { status: 503, error: "APP_BASE_URL is not configured, so request origin cannot be verified." };
   try {
-    return new URL(origin).origin === new URL(appBaseUrl).origin;
+    if (new URL(origin).origin !== new URL(appBaseUrl).origin) {
+      return { status: 403, error: "Request origin is not allowed." };
+    }
   } catch {
-    return false;
+    return { status: 503, error: "APP_BASE_URL is not a usable origin, so request origin cannot be verified." };
   }
+  return null;
 }
 
 function isJsonRpcPayload(value: unknown): value is {
@@ -72,10 +87,13 @@ export async function handleNetworkRpcPost(
   network: string,
   deps: RpcProxyDeps = {},
 ): Promise<Response> {
-  const fetcher = deps.fetch ?? fetch;
+  // Recorded like every other outbound call: the endpoint is key-bearing, so the
+  // record stores the redacted URL and never the endpoint itself.
+  const fetcher = instrumentFetch({ providerId: PROVIDER_IDS.alchemyRpc, fetcher: deps.fetch ?? fetch });
   const env = deps.env ?? process.env;
 
-  if (!sameOriginRequest(request)) return json({ error: "Request origin is not allowed." }, 403);
+  const originRefusal = sameOriginRefusal(request);
+  if (originRefusal) return json({ error: originRefusal.error }, originRefusal.status);
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     return json({ error: "Content-Type must be application/json." }, 415);
   }
@@ -98,12 +116,26 @@ export async function handleNetworkRpcPost(
 
   const resolution = resolveRpcEndpoint(network, env);
   if (!resolution.ok) {
-    return resolution.reason === "invalid-network"
-      ? json({ error: "Unknown network." }, 404)
-      : json({ error: "This network is not configured." }, 503);
+    if (resolution.reason === "invalid-network") return json({ error: "Unknown network." }, 404);
+    // Name the value that would enable it. The shared key is the fallback, the
+    // per-network variable is preferred, and both are safe to name.
+    const variable = rpcConfigurationVariableName(network);
+    return json({
+      error: variable
+        ? `${variable} is not configured, and no shared ALCHEMY_API_KEY covers this network.`
+        : "No Alchemy RPC endpoint is configured for this network.",
+    }, 503);
   }
   if (!consumeRateLimit(request)) return json({ error: "RPC request limit exceeded." }, 429);
 
+  // A network this process has watched fail repeatedly is skipped for a bounded
+  // cooldown, with the wait stated. The caller can retry rather than hang.
+  const skip = networkSkipDecision(resolution.slug);
+  if (skip.skip) {
+    return json({ error: skip.reason, retryable: true, retryAfterMs: skip.retryAfterMs }, 503);
+  }
+
+  const startedAt = Date.now();
   try {
     const upstream = await fetcher(resolution.endpoint, {
       method: "POST",
@@ -112,10 +144,39 @@ export async function handleNetworkRpcPost(
       cache: "no-store",
       signal: AbortSignal.timeout(15_000),
     });
-    if (!upstream.ok) return json({ error: "RPC provider is unavailable." }, 502);
+    if (!upstream.ok) {
+      const failure = reasonForProviderResponse(PROVIDER_IDS.alchemyRpc, upstream.status);
+      recordNetworkFailure(resolution.slug, failure.code);
+      (await currentLogger())?.error("rpc proxy: upstream refused the call", {
+        network: resolution.slug,
+        statusCode: upstream.status,
+        reason: describeReason(failure),
+        reasonCode: failure.code,
+      });
+      return json({ error: `${resolution.slug} answered ${upstream.status}. Try again.`, retryable: true }, 502);
+    }
     const result: unknown = await upstream.json();
+    recordNetworkSuccess(resolution.slug, Date.now() - startedAt);
     return json(result);
-  } catch {
-    return json({ error: "RPC provider is unavailable." }, 502);
+  } catch (error) {
+    const failure = reasonForThrownCall(PROVIDER_IDS.alchemyRpc, error);
+    recordNetworkFailure(resolution.slug, failure.code);
+    (await currentLogger())?.error("rpc proxy: upstream call failed", {
+      network: resolution.slug,
+      reason: describeReason(failure),
+      reasonCode: failure.code,
+      error,
+    });
+    return json({ error: `${resolution.slug} did not answer before the request ended. Try again.`, retryable: true }, 502);
   }
+}
+
+/**
+ * The logger this request logs through: the pinned context when a caller set
+ * one, otherwise the one the middleware's headers describe. Null outside a
+ * request (a script, a build), which is why every call site guards it.
+ */
+async function currentLogger(): Promise<Logger | null> {
+  const context = await resolveRequestContext();
+  return context?.logger ?? null;
 }

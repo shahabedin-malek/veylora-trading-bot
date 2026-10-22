@@ -51,7 +51,7 @@ export type OrderAttemptContext = {
 };
 
 function refuse(reason: "risk-policy-unavailable" | "risk-state-unavailable" | "audit-unavailable"): RiskDecision {
-  return { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: [reason] };
+  return { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: [reason], limits: [] };
 }
 
 function auditAttemptAndDecisionRecords(
@@ -192,7 +192,7 @@ export async function evaluateAndAuditPaperAttempt(
   try {
     policy = await persistence.readRiskPolicy();
   } catch {
-    const decision: RiskDecision = { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["risk-policy-unavailable"] };
+    const decision: RiskDecision = { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["risk-policy-unavailable"], limits: [] };
     try {
       await persistence.recordOrderAttemptAndDecision(paperRecords(decision));
     } catch {
@@ -209,7 +209,7 @@ export async function evaluateAndAuditPaperAttempt(
     ]);
     switchEngaged = globalEngaged || botEngaged;
   } catch {
-    const decision: RiskDecision = { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["risk-state-unavailable"] };
+    const decision: RiskDecision = { decision: "REFUSE", policyVersion: "veylora-risk-v1", reasons: ["risk-state-unavailable"], limits: [] };
     try {
       await persistence.recordOrderAttemptAndDecision(paperRecords(decision));
     } catch {

@@ -96,7 +96,14 @@ function isPaperView(value: unknown): value is PaperTradingView {
     "paperBotId" in value && typeof value.paperBotId === "string" && "paperConfig" in value;
 }
 
+/** Must match DEV_PAPER_SESSION_ID in src/lib/paper-trading/dev-seed.ts. */
+const DEV_PAPER_SESSION_ID = "00000000-0000-4000-8000-000000000000";
+
 function sessionId() {
+  // Development shows the server's seeded paper session, so the strategies on
+  // screen are the seeded draft/paper/stopped set. Every other mode keeps the
+  // per-tab session, which is what keeps the PAPER store unshared in production.
+  if (process.env.NODE_ENV === "development") return DEV_PAPER_SESSION_ID;
   const stored = window.sessionStorage.getItem("veylora-paper-session");
   if (stored) return stored;
   const created = window.crypto.randomUUID();
@@ -411,6 +418,12 @@ export function BotBuilderPanel() {
                 </dl>
                 {bot.backtestError && <p className="login-error" role="alert">Backtest unavailable: {bot.backtestError}</p>}
                 {bot.paperError && <p className="login-error" role="alert">Paper cycle unavailable: {bot.paperError}</p>}
+                {bot.state === "DRAFT" && !bot.backtestGate?.passed && (
+                  <p className="bot-builder-card__description">
+                    Paper mode stays unavailable until a full-period backtest passes the gate. The button is
+                    present: run the backtest first and it becomes usable.
+                  </p>
+                )}
                 <div className="bot-builder-actions">
                   {bot.state === "DRAFT" && <button disabled={busyId === bot.id} onClick={() => void runBacktest(bot)} type="button"><Play aria-hidden="true" size={14} />{busyId === bot.id ? "RUNNING FULL-YEAR BACKTEST" : "BACKTEST THIS STRATEGY"}</button>}
                   {bot.state === "DRAFT" && <button disabled={!bot.backtestGate?.passed || busyId === bot.id} onClick={() => void transition(bot, "PAPER")} type="button">{busyId === bot.id ? "VERIFYING PAPER GATE" : "START PAPER MODE"}</button>}

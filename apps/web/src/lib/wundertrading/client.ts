@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-
+import { instrumentFetch, PROVIDER_IDS } from "@/lib/observability/provider-call";
 export const WUNDERTRADING_BASE_URL = "https://wundertrading.com";
 export const WUNDERTRADING_RECV_WINDOW_MS = 30_000;
 
@@ -89,7 +89,10 @@ async function requestWunderTrading(
     recvWindow: WUNDERTRADING_RECV_WINDOW_MS,
     body,
   });
-  const response = await fetch(new URL(path, WUNDERTRADING_BASE_URL), {
+  // The signature and the API key travel in headers, so the instrumented call
+  // records the request without ever holding the credential's value.
+  const request = instrumentFetch({ providerId: PROVIDER_IDS.wundertrading });
+  const response = await request(new URL(path, WUNDERTRADING_BASE_URL), {
     method,
     cache: "no-store",
     redirect: "error",
@@ -139,4 +142,40 @@ export async function listWunderTradingStrategyHistory(
 ): Promise<unknown> {
   const payload = await requestWunderTrading(credentials, "GET", "/open_api/strategies/history?page=1&limit=100");
   return sanitizeWunderTradingResponse(payload);
+}
+
+/**
+ * The read-only import: what a read-labelled key can tell this account about itself.
+ *
+ * It calls only the two `:read` endpoints this client already knows — live
+ * strategies and their history — and it **interprets nothing**. WunderTrading is a
+ * strategy platform, not an exchange: its read surface answers profile and strategy
+ * questions rather than a spot balance, and this build will not invent a balance out
+ * of a payload whose fields it has not been shown. So the payload is returned as it
+ * arrived, under the endpoint that produced it, and the caller renders it as
+ * external evidence that is not counted as money.
+ *
+ * One request per endpoint, both through {@link requestWunderTrading}, so the same
+ * signature, timeout and response-size rules apply as everywhere else in this file.
+ */
+export type WunderTradingReadOnlyImport = {
+  endpoints: string[];
+  live: unknown;
+  history: unknown;
+  note: string;
+};
+
+export async function importWunderTradingReadOnly(
+  credentials: WunderTradingCredentials,
+): Promise<WunderTradingReadOnlyImport> {
+  const [live, history] = await Promise.all([
+    listWunderTradingLiveStrategies(credentials),
+    listWunderTradingStrategyHistory(credentials),
+  ]);
+  return {
+    endpoints: ["/open_api/strategies/live", "/open_api/strategies/history"],
+    live,
+    history,
+    note: "Read from WunderTrading's strategy:read endpoints. This payload is shown as it arrived and is not interpreted: WunderTrading's read surface answers strategy questions rather than a spot balance, so nothing in it is counted as a balance of this account.",
+  };
 }

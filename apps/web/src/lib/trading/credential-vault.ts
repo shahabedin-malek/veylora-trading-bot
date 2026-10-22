@@ -1,12 +1,39 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 
-export type TradingVenue = "binance" | "coinbase-advanced" | "kraken" | "wundertrading";
+/**
+ * Every venue a key can be stored for, including the one that moves no money.
+ *
+ * `binance-testnet` is here because a testnet key is a key like any other: it is
+ * encrypted with the same AAD (which names the venue, so testnet material cannot be
+ * decrypted as live material), stored in the same table, and revoked the same way. A
+ * separate `TradingVenue` union for sandboxes would be a second place to keep in step
+ * with `VENUE_IDS` in `src/lib/venues/types.ts`.
+ */
+export type TradingVenue = "binance" | "coinbase-advanced" | "kraken" | "wundertrading" | "binance-testnet";
 
+/**
+ * A venue key, decrypted — including the owner's own statement about its scope.
+ *
+ * `readOnly` is part of the material rather than only a column because it is a claim
+ * about *this key*, and a claim of that kind belongs inside the authenticated
+ * ciphertext: tampering with the stored bytes cannot turn a read-only key into a
+ * trade-capable one without breaking the authentication tag. The column on
+ * `TradingVenueCredential` is the queryable mirror of the same claim, so a listing or
+ * an order refusal reads it without decrypting anything.
+ *
+ * It is always present on the way *out* — a credential stored before the flag existed
+ * decrypts as `false`, which is what every key connected before this phase meant —
+ * and optional on the way *in*, so a caller states it only when it is true.
+ */
 export type VenueCredentialMaterial = {
   apiKey: string;
   apiSecret: string;
   passphrase?: string;
+  readOnly: boolean;
 };
+
+/** What a caller hands in to be encrypted: `readOnly` is stated only when it is true. */
+export type VenueCredentialInput = Omit<VenueCredentialMaterial, "readOnly"> & { readOnly?: boolean };
 
 export type EncryptedVenueCredentials = {
   ciphertext: string;
@@ -36,7 +63,11 @@ function validateMaterial(value: unknown): VenueCredentialMaterial {
     material.apiKey.length > MAX_CREDENTIAL_FIELD_LENGTH ||
     material.apiSecret.length > MAX_CREDENTIAL_FIELD_LENGTH ||
     (material.passphrase !== undefined &&
-      (typeof material.passphrase !== "string" || material.passphrase.length > MAX_CREDENTIAL_FIELD_LENGTH))
+      (typeof material.passphrase !== "string" || material.passphrase.length > MAX_CREDENTIAL_FIELD_LENGTH)) ||
+    // A scope that is not a boolean is refused rather than coerced: `"false"` is
+    // truthy in a hundred ways to get this wrong, and a key's scope is not a value
+    // to be generous about.
+    (material.readOnly !== undefined && typeof material.readOnly !== "boolean")
   ) {
     throw new Error("Invalid venue credentials.");
   }
@@ -44,12 +75,13 @@ function validateMaterial(value: unknown): VenueCredentialMaterial {
     apiKey: material.apiKey,
     apiSecret: material.apiSecret,
     ...(typeof material.passphrase === "string" ? { passphrase: material.passphrase } : {}),
+    readOnly: material.readOnly === true,
   };
 }
 
 export function encryptVenueCredentials(
   venue: TradingVenue,
-  input: VenueCredentialMaterial,
+  input: VenueCredentialInput,
 ): EncryptedVenueCredentials {
   const key = encryptionKey();
   const material = validateMaterial(input);

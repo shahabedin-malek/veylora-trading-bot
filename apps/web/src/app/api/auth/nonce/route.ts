@@ -1,10 +1,12 @@
 import { NextRequest } from "next/server";
-import { getAddress } from "viem";
 import { SiweMessage } from "siwe";
 import { prisma } from "@/lib/db";
-import { AUTH_NONCE_TTL_MS, getAuthConfig, getAuthUnavailableReason, isSameOriginRequest } from "@/lib/auth/config";
+import { AUTH_NONCE_TTL_MS, getAuthConfig, isSameOriginRequest } from "@/lib/auth/config";
+import { authenticationGapResponse } from "@/lib/auth/access-gate";
 import { describeAcceptedChains } from "@/lib/auth/chain-labels";
 import { createAuthNonce, hashAuthNonce } from "@/lib/auth/nonce";
+import { normalizeWalletAddress } from "@/lib/auth/wallet-address";
+import { clientAddress, consumeRateLimit, RATE_LIMITS, rateLimitResponse } from "@/lib/security/rate-limit";
 
 function jsonError(error: string, status: number) {
   return Response.json({ error }, { status, headers: { "Cache-Control": "no-store" } });
@@ -12,8 +14,18 @@ function jsonError(error: string, status: number) {
 
 export async function POST(request: NextRequest) {
   const config = getAuthConfig();
-  if (!config) return jsonError(getAuthUnavailableReason() ?? "Authentication is unavailable.", 503);
+  if (!config) return authenticationGapResponse();
   if (!isSameOriginRequest(request, config)) return jsonError("Request origin is not allowed.", 403);
+
+  // Minting a nonce writes a row and is the first half of a sign-in, so it is counted per
+  // caller before any work: a burst costs a 429, not a table full of nonces.
+  const limit = consumeRateLimit(`auth.nonce:${clientAddress(request)}`, RATE_LIMITS.authNoncePerMinute);
+  if (!limit.allowed) {
+    return rateLimitResponse(
+      limit,
+      `Too many sign-in attempts from this address: ${limit.limit} per minute. Try again in ${limit.retryAfterSeconds} seconds.`,
+    );
+  }
 
   let rawBody: string;
   try {
@@ -37,17 +49,16 @@ export async function POST(request: NextRequest) {
     return jsonError(`This chain is not available for sign-in. ${describeAcceptedChains([...config.allowedChainIds])}`, 403);
   }
 
-  let addressDisplay: string;
-  try {
-    addressDisplay = getAddress(body.address);
-  } catch {
-    return jsonError("Wallet address is invalid.", 400);
-  }
+  // The address in the message is the checksummed display form; the row is
+  // keyed by the canonical form. Both come from the same normaliser.
+  const address = normalizeWalletAddress(body.address);
+  if (!address) return jsonError("Wallet address is invalid.", 400);
+  const { canonical, display } = address;
 
   const now = new Date();
   const recentCount = await prisma.authNonce.count({
     where: {
-      addressCanonical: addressDisplay.toLowerCase(),
+      addressCanonical: canonical,
       issuedAt: { gt: new Date(now.getTime() - 60_000) },
     },
   }).catch(() => null);
@@ -60,7 +71,7 @@ export async function POST(request: NextRequest) {
   const message = new SiweMessage({
     scheme: config.scheme,
     domain: config.domain,
-    address: addressDisplay,
+    address: display,
     statement: "Sign in to Veylora. This does not authorize a transaction.",
     uri: config.loginUri,
     version: "1",
@@ -75,7 +86,7 @@ export async function POST(request: NextRequest) {
     await prisma.authNonce.create({
       data: {
         nonceHash,
-        addressCanonical: addressDisplay.toLowerCase(),
+        addressCanonical: canonical,
         chainId: body.chainId,
         domain: config.domain,
         uri: config.loginUri,

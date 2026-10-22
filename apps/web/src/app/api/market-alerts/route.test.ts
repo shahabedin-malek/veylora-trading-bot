@@ -12,8 +12,11 @@ test("market alert list fails closed when authentication is not configured", asy
   delete process.env.APP_BASE_URL;
   delete process.env.SESSION_SECRET;
   try {
+    // No usable auth configuration is a configuration gap, not a signed-out
+    // visitor: the read answers 503 and names the value it needs.
     const response = await GET();
-    assert.equal(response.status, 401);
+    assert.equal(response.status, 503);
+    assert.match(((await response.json()) as { error: string }).error, /APP_BASE_URL|AUTH_EVM_CHAIN_IDS|SESSION_SECRET/);
   } finally {
     if (previous.chainIds === undefined) delete process.env.AUTH_EVM_CHAIN_IDS;
     else process.env.AUTH_EVM_CHAIN_IDS = previous.chainIds;

@@ -29,21 +29,40 @@ function numeric(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function MarketChart({ candles, productId }: { candles: readonly ChartCandle[]; productId: string }) {
+export function MarketChart({
+  candles,
+  productId,
+  failure = null,
+}: {
+  candles: readonly ChartCandle[];
+  productId: string;
+  /** Why the candles could not be read. Empty history and a failed read say different things. */
+  failure?: string | null;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [range, setRange] = useState<ChartRange>("1Y");
   const [style, setStyle] = useState<ChartStyle>("candles");
   const rsi = calculateRsi(candles.map((candle) => numeric(candle.close) ?? Number.NaN));
+  // The range is measured back from the newest candle, not from the wall clock: a
+  // provider that lags must not empty the chart, and the render stays deterministic.
+  const reference = candles.at(-1) ? Date.parse(candles.at(-1)!.openTime) : Number.NaN;
+  const cutoff = reference - ranges.find((item) => item.label === range)!.days * 86_400_000;
+  const visible = Number.isFinite(cutoff) ? candles.filter((candle) => Date.parse(candle.openTime) >= cutoff) : [];
+  const lastBar = candles.at(-1)?.openTime.slice(0, 10) ?? null;
+  const canDraw = visible.length >= 2;
+  const singleBar = visible.length === 1 ? visible[0] : null;
 
   useEffect(() => {
     let chart: import("lightweight-charts").IChartApi | null = null;
     let observer: ResizeObserver | null = null;
     let disposed = false;
 
-    const selected = candles.filter((candle) => {
-      const cutoff = Date.now() - ranges.find((item) => item.label === range)!.days * 86_400_000;
-      return Date.parse(candle.openTime) >= cutoff;
-    });
+    if (!canDraw) return;
+    const newest = candles.at(-1) ? Date.parse(candles.at(-1)!.openTime) : Number.NaN;
+    const boundary = newest - ranges.find((item) => item.label === range)!.days * 86_400_000;
+    const selected = Number.isFinite(boundary)
+      ? candles.filter((candle) => Date.parse(candle.openTime) >= boundary)
+      : [];
 
     void import("lightweight-charts").then((library) => {
       const container = containerRef.current;
@@ -51,7 +70,7 @@ export function MarketChart({ candles, productId }: { candles: readonly ChartCan
 
       chart = library.createChart(container, {
         width: container.clientWidth,
-        height: 330,
+        height: container.clientHeight || 330,
         layout: {
           background: { type: library.ColorType.Solid, color: "transparent" },
           textColor: "#8b9a97",
@@ -110,8 +129,10 @@ export function MarketChart({ candles, productId }: { candles: readonly ChartCan
       chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
       chart.timeScale().fitContent();
       observer = new ResizeObserver((entries) => {
-        const width = entries[0]?.contentRect.width;
-        if (chart && width && width > 0) chart.applyOptions({ width });
+        const bounds = entries[0]?.contentRect;
+        if (chart && bounds && bounds.width > 0) {
+          chart.applyOptions({ width: bounds.width, height: bounds.height || undefined });
+        }
       });
       observer.observe(container);
     });
@@ -121,13 +142,18 @@ export function MarketChart({ candles, productId }: { candles: readonly ChartCan
       observer?.disconnect();
       chart?.remove();
     };
-  }, [candles, range, style]);
+  }, [candles, range, style, canDraw]);
 
   if (candles.length === 0) {
     return (
-      <div className="market-chart-empty" role="status">
-        <strong>No verified candle history</strong>
-        <span>{productId} historical candles are not shown here because the configured source returned none.</span>
+      <div className="market-chart-wrap">
+        <div className="market-chart-empty" role="status">
+          <strong>{failure ? "Chart unavailable" : "No verified candle history"}</strong>
+          <span>
+            {failure ?? `${productId} historical candles are not shown here because the configured source returned none.`}
+          </span>
+          <small className="market-chart-updated">LAST STORED BAR · NONE</small>
+        </div>
       </div>
     );
   }
@@ -145,7 +171,36 @@ export function MarketChart({ candles, productId }: { candles: readonly ChartCan
           ))}
         </div>
       </div>
-      <div aria-label={`${productId} historical price and volume chart`} className="market-chart-canvas" ref={containerRef} />
+      {canDraw ? (
+        <div aria-label={`${productId} historical price and volume chart`} className="market-chart-canvas" ref={containerRef} role="img" />
+      ) : singleBar ? (
+        <div className="market-chart-single" role="status">
+          <div>
+            <span>ONLY STORED BAR IN THIS RANGE</span>
+            <strong>{singleBar.openTime.slice(0, 10)}</strong>
+          </div>
+          <dl>
+            <div><dt>OPEN</dt><dd>{singleBar.open}</dd></div>
+            <div><dt>HIGH</dt><dd>{singleBar.high}</dd></div>
+            <div><dt>LOW</dt><dd>{singleBar.low}</dd></div>
+            <div><dt>CLOSE</dt><dd>{singleBar.close}</dd></div>
+            <div><dt>VOLUME</dt><dd>{singleBar.volume}</dd></div>
+          </dl>
+          <p>One bar is a reading, not a trend: a chart needs at least two closes. The stored bar is shown rather than a broken canvas.</p>
+        </div>
+      ) : (
+        <div className="market-chart-empty" role="status">
+          <strong>No bars in the selected range</strong>
+          <span>
+            {productId} has {candles.length} stored bar(s), none inside {range}. Choose a wider range; nothing is extrapolated.
+          </span>
+          <small className="market-chart-updated">LAST STORED BAR · {lastBar ?? "NONE"}</small>
+        </div>
+      )}
+      <div className="market-chart-updated" role="status">
+        LAST STORED BAR · {lastBar ?? "NONE"} · {visible.length} BAR(S) IN {range}
+        {failure ? ` · READ FAILED: ${failure}` : ""}
+      </div>
       <div className="market-indicator-strip" aria-label="Historical technical indicator">
         <div className="market-indicator-strip__metric">
           <span>WILDER / 14 DAILY BARS</span>

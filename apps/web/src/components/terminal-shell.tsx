@@ -1,13 +1,21 @@
 import {
   Activity,
   Bot,
+  Store,
   ArrowLeftRight,
   BarChart3,
   ChartNoAxesCombined,
   BriefcaseBusiness,
+  Code2,
+  Coins,
+  Cpu,
   Database,
   LayoutDashboard,
+  ListChecks,
+  LifeBuoy,
+  Receipt,
   ScanSearch,
+  ScrollText,
   Search,
   ShieldCheck,
   Sparkles,
@@ -16,26 +24,36 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { SessionTopbarAction, TradingReadiness } from "@/components/session-readiness";
+import { OnboardingProgress, SessionTopbarAction, TradingReadiness } from "@/components/session-readiness";
 
 const navigation = [
-  { label: "Overview", href: "/", icon: LayoutDashboard, key: "overview" },
+  { label: "Overview", href: "/terminal", icon: LayoutDashboard, key: "overview" },
+  { label: "Onboarding", href: "/onboarding", icon: ListChecks, key: "onboarding" },
   { label: "Markets", href: "/markets", icon: BarChart3, key: "markets" },
   { label: "Screener", href: "/screener", icon: ScanSearch, key: "screener" },
   { label: "Backtest", href: "/backtest", icon: ChartNoAxesCombined, key: "backtest" },
   { label: "Assistant", href: "/assistant", icon: Sparkles, key: "assistant" },
   { label: "Bot builder", href: "/bots", icon: Bot, key: "bots" },
+  { label: "Marketplace", href: "/marketplace", icon: Store, key: "marketplace" },
   { label: "Trade", href: "/trade", icon: ArrowLeftRight, key: "trade" },
-  { label: "Portfolio", href: "/#portfolio", icon: Wallet, key: "portfolio" },
-  { label: "Activity", href: "/#activity", icon: Activity, key: "activity" },
+  { label: "Account", href: "/account", icon: Coins, key: "account" },
+  { label: "Portfolio", href: "/terminal#portfolio", icon: Wallet, key: "portfolio" },
+  { label: "Activity", href: "/terminal#activity", icon: Activity, key: "activity" },
   { label: "ChainGPT", href: "/chaingpt", icon: Sparkles, key: "chaingpt" },
   { label: "WunderTrading", href: "/wundertrading", icon: BriefcaseBusiness, key: "wundertrading" },
   { label: "Research", href: "/research", icon: Search, key: "research" },
+  { label: "Pricing", href: "/pricing", icon: Receipt, key: "pricing" },
+  { label: "API docs", href: "/docs/api", icon: Code2, key: "api" },
 ] as const;
 
 const adminNavigation = [
+  { label: "Console", href: "/admin", icon: LayoutDashboard, key: "console" },
+  { label: "Support", href: "/admin/support", icon: LifeBuoy, key: "support" },
+  { label: "Audit trail", href: "/admin/audit", icon: ScrollText, key: "audit" },
   { label: "Data admin", href: "/admin/data", icon: Database, key: "admin" },
   { label: "Risk controls", href: "/admin/risk", icon: ShieldCheck, key: "risk" },
+  { label: "Fees", href: "/admin/fees", icon: Receipt, key: "fees" },
+  { label: "AI models", href: "/admin/models", icon: Cpu, key: "models" },
   { label: "Access", href: "/admin/access", icon: UsersRound, key: "access" },
 ] as const;
 
@@ -55,15 +73,19 @@ export function TerminalShell({
   adminView?: boolean;
   adminSections?: readonly AdminNavigationKey[];
 }) {
+  // The console is the admin home: every admin page links back to it, even the
+  // older pages that predate it and list only their own section keys.
   const visibleAdminNavigation = adminSections
-    ? adminNavigation.filter(({ key }) => adminSections.includes(key))
+    ? adminNavigation.filter(({ key }) => key === "console" || adminSections.includes(key))
     : adminNavigation;
   const visibleNavigation = adminView ? [...navigation, ...visibleAdminNavigation] : navigation;
 
   return (
-    <div className="terminal-shell">
+    <>
+      <a className="skip-link" href="#main-content">Skip to content</a>
+      <div className="terminal-shell">
       <aside className="sidebar" aria-label="Application sidebar">
-        <Link className="brand" href="/" aria-label="Veylora overview">
+        <Link className="brand" href="/terminal" aria-label="Veylora overview">
           <span className="brand-mark" aria-hidden="true">
             <i />
             <i />
@@ -91,6 +113,7 @@ export function TerminalShell({
 
         <div className="sidebar-bottom">
           <div className="sidebar-label">SESSION</div>
+          <OnboardingProgress />
           <TradingReadiness />
           <div className="sidebar-version">{adminView ? "PRIVATE DATA" : "PUBLIC DATA"}</div>
         </div>
@@ -109,8 +132,9 @@ export function TerminalShell({
             <SessionTopbarAction />
           </div>
         </header>
-        <main className="main-content">{children}</main>
+        <main className="main-content" id="main-content" tabIndex={-1}>{children}</main>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

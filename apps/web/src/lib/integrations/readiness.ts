@@ -3,6 +3,8 @@ import {
   getInitialAdminEvmAddress,
   getSessionSigningSecret,
 } from "@/lib/auth/config";
+import { resolveWalletConnectProjectId } from "@/lib/auth/wallet-connect";
+import { isSandbaseConfigured } from "@/lib/sandbase/client";
 import { resolveDatabaseUrl } from "@/lib/database-config";
 import { listRpcNetworkSlugs } from "@/lib/rpc/networks";
 
@@ -21,7 +23,13 @@ function hasValue(value: string | undefined): boolean {
 export function getIntegrationReadiness(env: NodeJS.ProcessEnv = process.env): IntegrationReadinessItem[] {
   const databaseUrl = resolveDatabaseUrl(env);
   const directDatabaseUrl = env.DATABASE_URL_UNPOOLED?.trim() || env.veylora_DATABASE_URL_UNPOOLED?.trim();
-  const walletConnectId = env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() || env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
+  // Read through the same resolver the login page uses, so this checklist cannot
+  // disagree with the page about which variable is set or which name wins when
+  // both are: a project id that /login calls missing must not read as ready here.
+  const mobilePairing = resolveWalletConnectProjectId({
+    NEXT_PUBLIC_REOWN_PROJECT_ID: env.NEXT_PUBLIC_REOWN_PROJECT_ID,
+    NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
+  });
   const encryptionKey = env.TRADING_CREDENTIAL_ENCRYPTION_KEY?.trim() ?? "";
 
   return [
@@ -32,8 +40,19 @@ export function getIntegrationReadiness(env: NodeJS.ProcessEnv = process.env): I
     { id: "initial-admin", label: "Initial owner wallet", owner: "Owner bootstrap environment", configured: getInitialAdminEvmAddress(env) !== null },
     { id: "session-secret", label: "Session signing secret", owner: "Deployment secret store", configured: getSessionSigningSecret(env) !== null },
     { id: "credential-encryption", label: "Credential encryption key", owner: "Deployment secret store", configured: /^[a-f0-9]{64}$/i.test(encryptionKey) },
-    { id: "walletconnect", label: "WalletConnect project ID", owner: "Public deployment configuration", configured: hasValue(walletConnectId) },
+    {
+      id: "walletconnect",
+      label: "WalletConnect project ID",
+      owner: "Public deployment configuration",
+      configured: mobilePairing.configured,
+    },
     { id: "alchemy", label: "Alchemy multi-network RPC key", owner: "Deployment secret store", configured: hasValue(env.ALCHEMY_API_KEY) || listRpcNetworkSlugs(env).length > 0 },
     { id: "tavily-keyless", label: "Tavily Search and Extract", owner: "No API key required; admin switches control availability", configured: true },
+    {
+      id: "sandbase",
+      label: "SandBase data API key",
+      owner: "Deployment secret store; the admin switch controls availability",
+      configured: isSandbaseConfigured(env),
+    },
   ];
 }
