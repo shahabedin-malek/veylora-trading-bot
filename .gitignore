@@ -33,6 +33,14 @@ coinbase-api-and-docs.txt
 https*.txt
 pg_service.conf
 
+# The rules above target credential dumps, not code whose name mentions one. These paths
+# are source: the admin route that issues public-API keys, and the migrations that created
+# the credential tables.
+!/apps/web/src/app/api/admin/api-keys/
+!/apps/web/src/app/api/admin/api-keys/**
+!/apps/web/prisma/migrations/*_credential_*/
+!/apps/web/prisma/migrations/*_credential_*/*
+
 # Local state, databases, corpora, and secret scan artifacts
 /data/
 *.sqlite

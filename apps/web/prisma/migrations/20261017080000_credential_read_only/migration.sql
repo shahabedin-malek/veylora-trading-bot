@@ -1,0 +1,23 @@
+-- Phase 15: a connected venue key that is for reading only.
+--
+-- One boolean, and it is the owner's own statement about the key they pasted: a key
+-- created only to read balances and history is labelled read-only, and the order path
+-- then refuses it *by name* (`READ_ONLY_CREDENTIAL`) instead of finding out at the
+-- venue and reporting a rejection the owner cannot act on. The read-only import path
+-- (`src/lib/portfolio/external.ts`) runs over exactly these rows, so "which keys may
+-- read for me" and "which keys may trade for me" are one column rather than a rule
+-- some code remembers to apply.
+--
+-- The default is false, which is the meaning every row that existed before this column
+-- was created with: a key connected to read balances *and* to trade. Nothing needs
+-- backfilling, and no key silently becomes read-only.
+--
+-- Rollback: drop the column. Every credential then reads as trade-capable again, which
+-- is what it was before this phase; nothing else in the schema or the book changes.
+--
+-- Verified statement for statement against the DDL Prisma derives from
+-- `prisma/schema.prisma` (`prisma migrate diff`), not executed, because no Postgres is
+-- reachable from this machine.
+
+-- AlterTable
+ALTER TABLE "TradingVenueCredential" ADD COLUMN "readOnly" BOOLEAN NOT NULL DEFAULT false;
