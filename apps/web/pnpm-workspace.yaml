@@ -2,14 +2,15 @@ allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
   '@reown/appkit': false
-  bufferutil: set this to true or false
-  ccxt: set this to true or false
+  bufferutil: false
+  # ccxt's postinstall prints a sponsor message; nothing in this build needs it.
+  ccxt: false
   esbuild: true
-  keccak: set this to true or false
+  keccak: true
   prisma: true
   sharp: false
   unrs-resolver: false
-  utf-8-validate: set this to true or false
+  utf-8-validate: false
 minimumReleaseAgeExclude:
   - viem@2.57.5
 overrides:
