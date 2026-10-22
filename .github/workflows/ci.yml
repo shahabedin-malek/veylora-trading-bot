@@ -6,7 +6,9 @@ on:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest`: the label is migrating to Ubuntu 26, and the browser-dependency
+    # install and the native modules in this tree were measured on 24.04.
+    runs-on: ubuntu-24.04
     steps:
       # Each of these runs on Node 24; the v4/v5 lines ran on Node 20, which the runner now
       # forces onto Node 24 and warns about on every run.
