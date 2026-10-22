@@ -11,6 +11,8 @@
 *secret*
 *credential*
 !/apps/web/src/lib/trading/credential-vault.ts
+!/apps/web/src/lib/trading/read-only-credentials.ts
+!/apps/web/src/lib/auth/totp-secret.ts
 !/apps/web/src/app/api/trading/credentials/
 !/apps/web/src/app/api/trading/credentials/**
 !/apps/web/tests/trading-credentials.test.ts
@@ -26,6 +28,9 @@ tiger-cloud-db-*-credentials.txt
 tigerdata.txt
 vercel-token.txt
 coinbase-api-and-docs.txt
+# Root-level URL-dump .txt files (a saved web page). One held live ChainGPT,
+# OctoBot and WunderTrading keys and was committed in b26ace8.
+https*.txt
 pg_service.conf
 
 # Local state, databases, corpora, and secret scan artifacts
@@ -49,6 +54,7 @@ pg_service.conf
 
 # Workspace session state is not project source
 /.vscode/
+/.codegraph/
 
 # Workspace-local agents, tooling, scratch data, and connection material
 /.scratch/
@@ -71,6 +77,7 @@ coverage/
 # Logs and local temporary files
 *.log
 *.tmp
+*.tmp.*
 /prompt.txt
 /qa.txt
 .DS_Store
