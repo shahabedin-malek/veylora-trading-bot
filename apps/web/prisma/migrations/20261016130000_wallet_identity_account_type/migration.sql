@@ -1,0 +1,26 @@
+-- Phase 09: record how a wallet's signature was proved, on the identity itself.
+--
+-- `WalletIdentity` gains one column:
+--   * `accountType` — "EOA" when a key recovered the claimed address, "CONTRACT"
+--     when the contract at that address accepted the signature through EIP-1271
+--     `isValidSignature`. It exists so the admin directory can say which kind of
+--     account a wallet is without asking the chain again, and so an operator can
+--     tell a smart account from an EOA at a glance.
+--
+-- The default is 'EOA' deliberately: every identity created before this phase was
+-- verified by `ecrecover`, because that was the only verification that existed.
+-- Existing rows are therefore already correct and need no backfill.
+--
+-- Not an enum, for the same reason no other state column here is: the account
+-- type set lives in `src/lib/auth/contract-account.ts`, and
+-- `scripts/dev-database.mjs` refuses to derive the SQLite development schema from
+-- a file containing one. Values are validated on read by `isAccountType`, and an
+-- unknown value is read as an EOA rather than trusted.
+--
+-- No index: the column is shown, never filtered on.
+--
+-- Rollback: drop the column. Sign-in falls back to key-based verification only,
+-- contract-wallet sign-in stops, and EOA sign-in is unaffected.
+
+-- AlterTable
+ALTER TABLE "WalletIdentity" ADD COLUMN "accountType" TEXT NOT NULL DEFAULT 'EOA';

@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_UNPOOLED")
 }
@@ -12,6 +12,28 @@ model User {
   id             String           @id @default(cuid())
   status         String           @default("ACTIVE")
   sessionVersion Int              @default(0)
+  /// When this account's balances were last read, in the balance surface the
+  /// owner uses (phase 11).
+  ///
+  /// An observation, not a checkbox: `GET /api/portfolio/ethereum` writes the
+  /// moment a read completed for this account, and the onboarding checklist
+  /// derives its "see a balance" step from it. Null means no balance has been
+  /// read for this account yet. There is no cash-balance table until phases
+  /// 12/13, so this is the only durable record that a balance was in front of
+  /// someone — which is why it lives here rather than being inferred.
+  lastBalanceReadAt DateTime?
+  /// When this account was last observed signing in (phase 11).
+  ///
+  /// Refreshed on every successful sign-in, so a repeat sign-in is a *visible*
+  /// event on the record rather than one that only the session table knows
+  /// about. It is the account's recency; the per-device answer stays on
+  /// `AuthSession.lastSeenAt`, because "this browser was used five minutes ago"
+  /// and "this account signed in yesterday" are different facts and the admin
+  /// directory shows both.
+  lastSeenAt        DateTime?
+  sessions       AuthSession[]    @relation("UserSessions")
+  totpCredential TotpCredential?  @relation("UserTotp")
+  securityPolicyUpdates SecurityPolicySettings[] @relation("SecurityPolicyUpdatedBy")
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   walletIdentity WalletIdentity[]
@@ -19,8 +41,11 @@ model User {
   evmPortfolioNetworks EvmPortfolioNetwork[]
   marketAlerts MarketAlert[]
   marketAlertEvents MarketAlertEvent[] @relation("MarketAlertEventActor")
+  notificationDeliveries NotificationDelivery[]
+  notificationSettingsUpdates NotificationChannelSettings[] @relation("NotificationSettingsUpdatedBy")
   venueCredentials TradingVenueCredential[]
   tradeOrders    TradeOrder[]
+  idempotencyRecords IdempotencyRecord[] @relation("IdempotencyActor")
   roles          RoleAssignment[]
   auditEvents    AuditEvent[]
   riskPolicyUpdates RiskPolicySettings[] @relation("RiskPolicyUpdatedBy")
@@ -32,8 +57,262 @@ model User {
   chainGptFeatureSettingsUpdates ChainGPTFeatureSettings[] @relation("ChainGPTSettingsUpdatedBy")
   wunderTradingFeatureSettingsUpdates WunderTradingFeatureSettings[] @relation("WunderTradingSettingsUpdatedBy")
   integrationFeatureSettingsUpdates IntegrationFeatureSettings[] @relation("IntegrationSettingsUpdatedBy")
+  depositAddresses DepositAddress[]
+  deposits        Deposit[]
+  ledgerAccounts  LedgerAccount[]
+  withdrawals     Withdrawal[]
+  withdrawalAddresses WithdrawalAddress[]
+  withdrawalSettingsUpdates WithdrawalSettings[] @relation("WithdrawalSettingsUpdatedBy")
+  feeSchedules    FeeSchedule[]    @relation("FeeScheduleCreatedBy")
+  screeners       Screener[]
+  strategyActivation StrategyActivation?
+  strategyDecisions StrategyDecision[]
+  assistantUsage AssistantUsageWindow[]
+  aiProviderSettingsUpdates AiProviderSettings[] @relation("AiProviderSettingsUpdatedBy")
+  aiRequests      AiRequestRecord[]
+  strategyDefinitions StrategyDefinition[]
+  backtestRuns    BacktestRun[]
+  bots            Bot[]
+  botTemplates    StrategyTemplate[] @relation("StrategyTemplateAuthor")
+  signalTokens    SignalToken[]
+  signalEvents    SignalEvent[]
+  webhookSubscriptions WebhookSubscription[]
+  webhookDeliveries WebhookDelivery[]
+  apiKeys         ApiKey[]         @relation("UserApiKeys")
+  adminSavedViews AdminSavedView[] @relation("AdminSavedViews")
+  supportTickets  SupportTicket[]  @relation("SupportTicketSubject")
+  supportTicketsCreated SupportTicket[] @relation("SupportTicketCreatedBy")
+  supportTicketsAssigned SupportTicket[] @relation("SupportTicketAssignee")
+  ticketMessages  TicketMessage[]  @relation("TicketMessageAuthor")
+  userNotes       UserNote[]       @relation("UserNoteSubject")
+  userNotesAuthored UserNote[]     @relation("UserNoteAuthor")
+  savedReplies    SavedReply[]     @relation("SavedReplyAuthor")
+  ownedAgentAccounts AgentAccount[] @relation("OwnerAgentAccounts")
+  agentLedgerAccounts AgentAccount[] @relation("AgentLedgerAccounts")
+  agentApprovals AgentApproval[]  @relation("AgentApprovalOwner")
+  agentApprovalDecisions AgentApproval[] @relation("AgentApprovalDecider")
 }
 
+/// One deposit address for one account on one network (phase 12).
+///
+/// The row is the *record* of a derivation, not the source of it: the address is
+/// a pure function of `DEPOSIT_ADDRESS_MNEMONIC` and the account's own id (see
+/// `src/lib/deposits/addresses.ts`), so the same account derives the same address
+/// on every machine and deleting this row would not change it. What the row is
+/// for is the watcher's lookup — "this transfer arrived at an address we issued,
+/// for this account" — and the unique constraints are what keep that honest:
+/// one address per account and network, and no address issued twice to two
+/// accounts (a collision is refused, never silently re-derived).
+///
+/// `token*` records the token this address was issued to receive, so a later
+/// change of deposit token cannot retroactively relabel an old arrival.
+model DepositAddress {
+  id              String   @id @default(cuid())
+  userId          String
+  network         String
+  chainId         Int
+  address         String
+  derivationIndex Int
+  tokenSymbol     String?
+  tokenAddress    String?
+  tokenDecimals   Int?
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  deposits        Deposit[]
+
+  @@unique([userId, network])
+  @@unique([network, address])
+  @@index([userId, createdAt])
+}
+
+/// One transfer observed on chain (phase 12).
+///
+/// `status` is a plain string for the same reason every other state column here
+/// is: the set lives in `src/lib/deposits/states.ts`, which is also the only
+/// place that decides which of them counts as money. The unique key is
+/// (network, txHash, logIndex) — the chain's own identity for a transfer — so
+/// the same event seen twice (a restart, a re-scan, a second runner) can only
+/// ever produce one row and one credit. A native-coin arrival has no log index
+/// and uses -1.
+///
+/// `evidenceJson` keeps the raw chain evidence the row was decided from (block
+/// hash, from, to, the token's log address and topics, the token's decimals), so
+/// "why was this credited?" is answerable from the row after the fact.
+/// `userId` is nullable on purpose: an arrival we can see but cannot attribute is
+/// a real state (UNMATCHED) and must not be forced onto an account.
+model Deposit {
+  id               String    @id @default(cuid())
+  userId           String?
+  depositAddressId String?
+  network          String
+  chainId          Int
+  tokenSymbol      String
+  tokenAddress     String?
+  decimals         Int
+  amount           String
+  rawAmount        String
+  txHash           String
+  logIndex         Int       @default(-1)
+  blockNumber      Int
+  blockHash        String
+  confirmations    Int       @default(0)
+  status           String    @default("PENDING")
+  reasonCode       String?
+  reasonMessage    String?
+  evidenceJson     String    @default("{}")
+  origin           String    @default("WATCHER")
+  observedAt       DateTime  @default(now())
+  creditedAt       DateTime?
+  lastCheckedAt    DateTime?
+  revertedAt       DateTime?
+  updatedAt        DateTime  @updatedAt
+  user             User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  depositAddress   DepositAddress? @relation(fields: [depositAddressId], references: [id], onDelete: SetNull)
+
+  @@unique([network, txHash, logIndex])
+  @@index([userId, status, observedAt])
+  @@index([status, network, observedAt])
+  @@index([depositAddressId, observedAt])
+}
+
+/// How far the watcher has read each network (phase 12).
+///
+/// A cursor per network rather than per address: one run reads a block range once
+/// and classifies every transfer in it. It is written in the same transaction as
+/// the deposits found in that range, so a crash mid-run re-reads the range
+/// instead of skipping it — and re-reading is safe, because detection is keyed by
+/// the chain's own (txHash, logIndex).
+model DepositScanCursor {
+  network          String   @id
+  lastScannedBlock Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+/// One account in the ledger of record (phase 13).
+///
+/// An account is an *address money can be posted to*, not a balance: the balance
+/// is derived from the entries and never stored, so it cannot drift from them.
+/// Each account is one asset's worth of one thing, and `code` names it for good:
+///
+///   user:<userId>:<asset>:available   what the account holds — a liability of the
+///                                     platform towards the account
+///   platform:treasury:<asset>         the money the platform holds from the
+///                                     outside world (custody)
+///   platform:deposits-pending:<asset> receipts recorded and not yet owed to an
+///                                     account
+///   platform:fees:<asset>             revenue the platform has kept
+///
+/// `ownerType` and `bucket` are plain strings for the same reason every other
+/// state column here is: the sets live in `src/lib/ledger/accounts.ts`, and
+/// `scripts/dev-database.mjs` refuses to derive the SQLite development schema
+/// from a schema file containing an enum.
+///
+/// `creditLineMinor` is the explicit permission a balance needs before it may go
+/// negative, in the asset's minor units. Null is the normal case, and a negative
+/// balance on an account without one is an invariant violation the ledger reports
+/// rather than tolerates.
+model LedgerAccount {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  ownerType       String
+  bucket          String
+  asset           String
+  decimals        Int
+  userId          String?
+  creditLineMinor String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  entries         LedgerEntry[]
+
+  @@unique([userId, asset, bucket])
+  @@index([asset, bucket])
+  @@index([userId, asset])
+}
+
+/// One balanced movement in the ledger (phase 13).
+///
+/// A transaction is the unit that is *balanced*: its debits and its credits add
+/// up, per asset, in minor units. `idempotencyKey` is unique, which is what makes
+/// posting a movement exactly-once: a retry, a re-read block range or a second
+/// runner can only ever produce the transaction that already exists.
+///
+/// A reversal is another transaction whose `reversesTransactionId` points at the
+/// one it undoes. Nothing is ever edited or deleted, so the trail of what was
+/// believed and when survives being wrong.
+model LedgerTransaction {
+  id                    String   @id @default(cuid())
+  kind                  String
+  idempotencyKey        String   @unique
+  actorUserId           String?
+  sourceType            String?
+  sourceId              String?
+  memo                  String?
+  occurredAt            DateTime
+  createdAt             DateTime @default(now())
+  reversesTransactionId String?
+  reverses              LedgerTransaction?  @relation("LedgerTransactionReversal", fields: [reversesTransactionId], references: [id], onDelete: SetNull)
+  reversedBy            LedgerTransaction[] @relation("LedgerTransactionReversal")
+  entries               LedgerEntry[]
+
+  @@index([actorUserId, occurredAt])
+  @@index([kind, occurredAt])
+  @@index([sourceType, sourceId])
+  /// The integrity check reads the whole book in time order; without this the
+  /// scan sorts 100k rows in a temp B-tree — 671 ms to 550 ms at the bench
+  /// volume (phase 38).
+  @@index([occurredAt])
+}
+
+/// One leg of a ledger transaction (phase 13).
+///
+/// `amountMinor` is an exact integer count of the asset's smallest unit, held as
+/// a string: a ledger amount is not a number a machine may round, and neither a
+/// 32-bit integer nor an arbitrary-precision integer column (which the SQLite
+/// development schema cannot represent — see `scripts/dev-database.mjs`) is the
+/// right home for it. The value is validated to be a plain, non-negative integer
+/// of digits on the way in, and every step of the money path works on exact
+/// integers, so none of them ever sees a floating-point number.
+///
+/// `direction` is DEBIT or CREDIT and `sequence` orders the legs within their
+/// transaction, so the statement of a transaction always reads the same way.
+model LedgerEntry {
+  id            String   @id @default(cuid())
+  transactionId String
+  accountId     String
+  asset         String
+  direction     String
+  amountMinor   String
+  decimals      Int
+  sequence      Int
+  createdAt     DateTime @default(now())
+  transaction   LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  account       LedgerAccount     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@unique([transactionId, sequence])
+  @@index([accountId, createdAt])
+  @@index([asset, direction])
+  /// A statement walks one account's legs in transaction order, and the balance
+  /// aggregate groups by account; this index serves both — 202 ms to 144 ms for
+  /// a 30-day range and 122 ms to 84 ms for a page (phase 38).
+  @@index([accountId, transactionId])
+}
+
+/// How an account's signature was proved, kept on the identity (phase 09).
+///
+/// `accountType` is "EOA" when a key recovered the claimed address (an
+/// externally owned account) and "CONTRACT" when the contract at that address
+/// accepted the signature itself through EIP-1271 `isValidSignature` — a Safe, an
+/// Argent account, a 4337 smart account, a delegation account. It is a plain
+/// string for the same reason every other state column here is: the set lives in
+/// `src/lib/auth/contract-account.ts`, and `scripts/dev-database.mjs` refuses to
+/// derive the SQLite development schema from a file containing an enum. Values
+/// are validated on read by `isAccountType`.
+///
+/// The default is "EOA" so the rows that existed before this phase keep meaning
+/// what they meant: everything signed in before contract verification existed was
+/// verified by `ecrecover`.
 model WalletIdentity {
   id                String   @id @default(cuid())
   userId            String
@@ -42,6 +321,7 @@ model WalletIdentity {
   addressCanonical  String
   addressDisplay    String
   proofType         String
+  accountType       String   @default("EOA")
   verifiedAt        DateTime @default(now())
   createdAt         DateTime @default(now())
   revokedAt         DateTime?
@@ -49,6 +329,118 @@ model WalletIdentity {
 
   @@unique([chainNamespace, chainReference, addressCanonical])
   @@index([userId, revokedAt])
+}
+
+/// One signed-in session, one row per device (phase 10).
+///
+/// Sessions used to be stateless: a signed cookie naming the account and the
+/// account's `sessionVersion`. That is enough to end *every* session at once, and
+/// it is what sign-out uses, but it cannot answer "which devices are signed in?"
+/// or "end that one". So the cookie also names a row here, and every request
+/// resolves it: a revoked or expired row stops that cookie on its next use, with
+/// no version bump for the other devices.
+///
+/// `deviceLabel` is what the owner recognises in the list ("MetaMask · Chrome on
+/// Linux"); `userAgent` and `ipAddress` are the raw observations behind it, kept
+/// so the label can be re-derived and so a surprising session can be recognised.
+/// `totpVerifiedAt` is when a code was last accepted *in this session*, and
+/// `totpLastStep` is the time step of that code, which is what stops one code
+/// from being presented twice.
+model AuthSession {
+  id               String    @id
+  userId           String
+  walletIdentityId String
+  chainNamespace   String
+  chainReference   String
+  deviceLabel      String
+  userAgent        String?
+  ipAddress        String?
+  createdAt        DateTime  @default(now())
+  lastSeenAt       DateTime  @default(now())
+  expiresAt        DateTime
+  totpVerifiedAt   DateTime?
+  totpLastStep     Int?
+  revokedAt        DateTime?
+  revokedReason    String?
+  user             User      @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+/// One authenticator per account (phase 10).
+///
+/// The secret is sealed with the deployment's AES-256-GCM key under its own
+/// associated data, so a ciphertext cannot be moved between this purpose and the
+/// venue-credential vault. `lastUsedStep` is replay protection; `failedAttempts`
+/// and `lockedUntil` are the lockout, both reset by any accepted code, and both
+/// bounded by policy the owner edits rather than by constants in code.
+model TotpCredential {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  label            String
+  secretCiphertext String
+  secretIv         String
+  secretAuthTag    String
+  digits           Int       @default(6)
+  periodSeconds    Int       @default(30)
+  algorithm        String    @default("SHA1")
+  createdAt        DateTime  @default(now())
+  activatedAt      DateTime?
+  lastUsedAt       DateTime?
+  lastUsedStep     Int?
+  failedAttempts   Int       @default(0)
+  lockedUntil      DateTime?
+  revokedAt        DateTime?
+  user             User      @relation("UserTotp", fields: [userId], references: [id], onDelete: Cascade)
+  backupCodes      TotpBackupCode[]
+
+  @@index([userId, revokedAt])
+}
+
+/// A single-use backup code, stored as a digest (phase 10).
+///
+/// Only the digest is kept, so the codes exist in readable form exactly once —
+/// when they are issued — and `usedAt` is what makes each one single-use. The
+/// digest is over the normalised code, and the lookup is by digest, so the row
+/// itself never has to hold the code to check one.
+model TotpBackupCode {
+  id           String         @id @default(cuid())
+  credentialId String
+  codeHash     String
+  issuedAt     DateTime       @default(now())
+  usedAt       DateTime?
+  credential   TotpCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+
+  @@unique([credentialId, codeHash])
+  @@index([credentialId, usedAt])
+}
+
+/// What the owner's account demands, as data (phase 10).
+///
+/// Three scopes, each with its own switch: sign-in, trading and funding. A scope
+/// that is on requires a two-factor code — at sign-in for the first, and within
+/// `stepUpMinutes` before the action for the other two. Nothing here is a
+/// constant in code, every change is audited, and all three default to off: this
+/// phase adds no requirement the owner cannot turn off.
+///
+/// `maxFailedAttempts` and `lockoutMinutes` are the lockout, also as data. A
+/// requirement with no enrolled, activated credential is not enforceable, so it
+/// is reported as such rather than enforced — which is what keeps an owner from
+/// being locked out by a setting they cannot satisfy.
+model SecurityPolicySettings {
+  id                    String   @id @default("global")
+  requireTotpForSignIn  Boolean  @default(false)
+  requireTotpForTrading Boolean  @default(false)
+  requireTotpForFunding Boolean  @default(false)
+  stepUpMinutes         Int      @default(15)
+  maxFailedAttempts     Int      @default(5)
+  lockoutMinutes        Int      @default(15)
+  updatedByUserId       String?
+  updatedAt             DateTime @updatedAt
+  updatedBy             User?    @relation("SecurityPolicyUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([updatedByUserId])
 }
 
 model EvmTokenAllowlistEntry {
@@ -74,6 +466,28 @@ model EvmPortfolioNetwork {
   @@index([userId, enabledAt])
 }
 
+/// Token metadata cache (phase 18).
+///
+/// Public chain facts only — symbol, name and decimals for one contract on one
+/// chain. No user id and no balance: the same token is the same token for every
+/// account, so the cache is shared. A read of this table that fails is a miss,
+/// not an error: holdings are read from the chain either way, with the address
+/// standing in for metadata that could not be resolved.
+model TokenMetadata {
+  id              String   @id @default(cuid())
+  chainId         Int
+  contractAddress String
+  symbol          String?
+  name            String?
+  decimals        Int
+  source          String   @default("alchemy_getTokenMetadata")
+  fetchedAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([chainId, contractAddress])
+  @@index([chainId, fetchedAt])
+}
+
 model MarketAlert {
   id                 String   @id @default(cuid())
   userId             String
@@ -85,30 +499,120 @@ model MarketAlert {
   lastObservedValue  String?
   lastEvaluationError String?
   triggeredAt        DateTime?
+  /// The last observed state of the condition, so a fire is a *crossing* (false → true)
+  /// rather than every check while the condition stays true. Phase 29: without this, a
+  /// daily evaluation re-sent the same alert every day the price stayed above the line.
+  conditionMet       Boolean  @default(false)
+  /// The shortest gap between two fires of this rule, in minutes (phase 29). It is per
+  /// rule because a volatility alert and a "price crossed 100k" alert need different
+  /// pacing. Enforced atomically by `claimAndAuditAlertTrigger`, so two overlapping
+  /// runner invocations cannot both fire it.
+  cooldownMinutes    Int      @default(60)
   deletedAt          DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  event              MarketAlertEvent?
+  events             MarketAlertEvent[]
+  deliveries         NotificationDelivery[]
 
   @@index([userId, status, createdAt])
   @@index([status, lastEvaluatedAt, createdAt])
 }
 
+/// One crossing of one rule (phase 19, re-armed in phase 29).
+///
+/// A rule can now fire more than once — the owner sets a cooldown and the condition has to
+/// clear and cross again — so this is an append-only history rather than a single row hung
+/// off the alert. `windowStart` is the cooldown bucket the crossing belongs to, and the
+/// unique index is the deduplication the phase asks for: two evaluators that both think
+/// they won the race can write at most one event for the same rule and window.
 model MarketAlertEvent {
   id               String   @id @default(cuid())
-  alertId          String   @unique
+  alertId          String
   actorUserId      String
   observedValue    String
   sourceObservedAt DateTime
   providerId       String
+  windowStart      DateTime @default(now())
   triggeredAt      DateTime @default(now())
   alert            MarketAlert @relation(fields: [alertId], references: [id], onDelete: Restrict)
   actor            User     @relation("MarketAlertEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
 
+  @@unique([alertId, windowStart])
   @@index([actorUserId, triggeredAt])
+  @@index([alertId, triggeredAt])
 }
 
+/// Which notification channels are on, and when they stay quiet (phase 29).
+///
+/// One global row, like every other owner setting. A channel switch is data because the
+/// owner turns email or Telegram on when their own credentials are in place; the credentials
+/// themselves are environment variables and are never stored here. Quiet hours are UTC and
+/// may wrap midnight (22:00 → 07:00). `defaultCooldownMinutes` is what a newly created rule
+/// starts with; each rule stores its own copy so changing the default never rewrites history.
+model NotificationChannelSettings {
+  id                    String   @id @default("global")
+  inAppEnabled          Boolean  @default(true)
+  emailEnabled          Boolean  @default(false)
+  telegramEnabled       Boolean  @default(false)
+  quietHoursEnabled     Boolean  @default(false)
+  quietHoursStart       String   @default("22:00")
+  quietHoursEnd         String   @default("07:00")
+  defaultCooldownMinutes Int     @default(60)
+  updatedByUserId       String?
+  updatedAt             DateTime @updatedAt
+  updatedBy             User?    @relation("NotificationSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([updatedByUserId])
+}
+
+/// One delivery attempt (phase 29).
+///
+/// Append-only: a retry is another row, so "what was sent, what failed and what the provider
+/// said" is a history rather than a status field that overwrites its own evidence.
+/// `dedupeKey` is (rule, condition, cooldown window); the first row for a key is the only
+/// one that may send, which is what stops a repeated evaluation from re-notifying.
+/// `target` is always masked (`a***@example.com`, `chat ***1234`) and an error is the
+/// provider's safe message, never a request with a token in it.
+model NotificationDelivery {
+  id                String   @id @default(cuid())
+  userId            String
+  alertId           String?
+  channel           String
+  target            String
+  subject           String
+  body              String
+  status            String
+  providerId        String?
+  providerMessageId String?
+  error             String?
+  attempt           Int      @default(1)
+  durationMs        Int?
+  dedupeKey         String
+  windowStart       DateTime
+  queuedAt          DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alert             MarketAlert? @relation(fields: [alertId], references: [id], onDelete: SetNull)
+
+  @@unique([dedupeKey, channel, attempt])
+  @@index([userId, createdAt])
+  @@index([status, queuedAt])
+}
+
+/// One connected venue key (phase 05), and whether it may place orders (phase 15).
+///
+/// `readOnly` is the owner's own statement about the key they pasted: a key created
+/// only to read balances and history is labelled read-only, and the order path
+/// refuses it *by name* rather than discovering at submission time that the venue
+/// said no. It defaults to false, so every row that existed before this column has
+/// the meaning it was created with — a key that was connected to trade.
+///
+/// The same claim travels inside the encrypted material
+/// (`src/lib/trading/credential-vault.ts`), so a decrypted credential reports the
+/// scope it was stored with, while this column is what a listing or a refusal reads
+/// without decrypting anything.
 model TradingVenueCredential {
   id                    String   @id @default(cuid())
   userId                String
@@ -118,7 +622,30 @@ model TradingVenueCredential {
   credentialIv          String
   credentialAuthTag     String
   fingerprint           String
+  /// When true this key is for reading only: the import path uses it, and the order
+  /// path refuses it with `READ_ONLY_CREDENTIAL`.
+  readOnly              Boolean  @default(false)
+  /// What the owner asked this key to be allowed to do, as a JSON array of the
+  /// vocabulary in `src/lib/venues/types.ts` (`read`, `trade`). `withdraw` is never
+  /// stored: the save path refuses it with `WITHDRAWAL_NOT_PERMITTED`.
+  ///
+  /// It is a mirror of `readOnly` for every row this build writes; it is a column of
+  /// its own because a later scope (for example a per-venue subset) must be able to
+  /// say more than one boolean, and because "what was requested" is the half of the
+  /// permission question the owner owns.
+  requestedPermissions  String   @default("[]")
+  /// What the *venue* reported about the key at its last check, as JSON, or null when
+  /// the venue does not answer that question (phase 20). Null is not "no permissions":
+  /// it is "not reported", and the panel says exactly that.
+  reportedPermissions   String?
   verifiedAt            DateTime?
+  /// The last verification attempt, successful or not (phase 20). `verifiedAt` keeps
+  /// its old meaning — the last time the key was *proved* to work — so a key that
+  /// worked yesterday and is broken today still shows when it last worked while these
+  /// columns say what happened since.
+  lastCheckedAt         DateTime?
+  lastCheckLatencyMs    Int?
+  lastCheckError        String?
   revokedAt             DateTime?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -129,30 +656,62 @@ model TradingVenueCredential {
   @@index([venue, revokedAt])
 }
 
+/// One order, from the local intent to a terminal state (phase 06).
+///
+/// `status` is a plain string on purpose. The lifecycle lives in
+/// `src/lib/orders/state-machine.ts`, which is the single place that decides what
+/// a status may be and which moves are legal; a Postgres enum would be a second
+/// copy of that rule, and development could not derive its SQLite schema from a
+/// file containing one (`scripts/dev-database.mjs` refuses an enum). Every status
+/// a row carries is validated on the way out by `src/lib/orders/store.ts`.
+///
+/// `filledQuantity` is the **cumulative** executed quantity, which is what makes
+/// applying the same venue report twice safe. A cancelled partially filled order
+/// keeps it: the executed part is a real trade, not a quantity to discard.
+/// `attempts`, `lastAttemptReason` and `lastProviderResponseJson` are the record
+/// of the last submission attempt — the venue's own answer, redacted — so "why
+/// did this order fail?" is answered from the row rather than guessed.
 model TradeOrder {
-  id                    String   @id @default(cuid())
-  userId                String
-  venue                 String
-  market                String
-  side                  String
-  orderType             String
-  status                String   @default("PENDING")
-  clientOrderId         String   @unique
-  venueOrderId          String?
-  requestedAmount       String
-  limitPrice            String?
-  stopLossPrice         String
-  notionalUsdCents      Int
-  verifiedBalanceCents  Int
-  submittedAt           DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  redactedResultJson    String   @default("{}")
-  user                  User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  id                        String   @id @default(cuid())
+  userId                    String
+  venue                     String
+  market                    String
+  side                      String
+  orderType                 String
+  /// Where the intent came from: `manual` (the owner's ticket), `assistant` (the
+  /// place_paper_order tool), `strategy` (a runner pass or signed signal) or `api`.
+  /// The account page's assistant paper-performance block selects on this column.
+  origin                    String   @default("manual")
+  status                    String   @default("CREATED")
+  clientOrderId             String   @unique
+  venueOrderId              String?
+  requestedAmount           String
+  filledQuantity            String   @default("0")
+  limitPrice                String?
+  stopLossPrice             String
+  notionalUsdCents          Int
+  verifiedBalanceCents      Int
+  idempotencyKey            String?
+  attempts                  Int      @default(0)
+  lastAttemptAt             DateTime?
+  lastAttemptReason         String?
+  lastProviderResponseJson  String   @default("{}")
+  submittedAt               DateTime?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  redactedResultJson        String   @default("{}")
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId, createdAt])
   @@index([venue, venueOrderId])
   @@index([status, createdAt])
+  @@index([idempotencyKey])
+  /// The orders list filters by account and status, 4 ms to 3 ms (phase 38).
+  @@index([userId, status, createdAt])
+  /// The strategy runner counts one account's open orders in one market on
+  /// every activation; this is a covering index for that count, 3 ms to 1 ms
+  /// per call (phase 38).
+  @@index([userId, market, status])
 }
 
 model AuthNonce {
@@ -181,6 +740,209 @@ model RoleAssignment {
   @@index([userId, scope, revokedAt])
 }
 
+/// One account's smart-trading activation (phase 23).
+///
+/// `status` is the owner's **intent** — RUNNING or STOPPED — and it is the only column
+/// the start and stop controls write. The row is unique per account, so pressing stop and
+/// then start again leaves one activation rather than a history of them; the history is
+/// the audit trail, which records each change with its actor and reason.
+///
+/// `lastOutcome` and the `lastReason*` pair are the runner's observation, not the owner's
+/// intent. They are written by the strategy job on every pass and are what the panel reads
+/// to say "running", "idle because no venue is connected" or "the last pass failed"
+/// without the browser having to reconstruct it. A pass only writes them while the row is
+/// RUNNING, so a stop that lands mid-pass is not overwritten by the pass it interrupted.
+///
+/// `strategyId` is nullable on purpose: an activation with no strategy is a real state the
+/// panel reports ("no strategy selected"), not a reason to refuse the start — phase 24
+/// supplies the decision loop and this phase must not invent a gate in front of it.
+model StrategyActivation {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  status              String   @default("STOPPED")
+  strategyId          String?
+  startedAt           DateTime?
+  stoppedAt           DateTime?
+  lastChangeReason    String?
+  lastChangedByUserId String?
+  lastChangedAt       DateTime?
+  lastEvaluatedAt     DateTime?
+  lastOutcome         String?
+  lastReasonCode      String?
+  lastReasonMessage   String?
+  runCount            Int      @default(0)
+  /// The interval this activation was last evaluated for (phase 24).
+  ///
+  /// It is both the record of the last decision's window and the claim: a pass takes the
+  /// window with one conditional update against this column, so two concurrent
+  /// invocations cannot both evaluate it. Null means nothing has been decided yet.
+  lastWindowStart     DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decisions           StrategyDecision[]
+  killSwitch          StrategyKillSwitch?
+
+  @@index([status, lastEvaluatedAt])
+}
+
+/// One evaluation of one strategy, whether or not it traded (phase 24).
+///
+/// The record is the phase's answer to "why did nothing happen": the inputs the pass read,
+/// the condition values it compared, the outcome and the reason. `windowStart` is the
+/// strategy interval being evaluated, and the unique index is the last line of defence
+/// against a second decision for the same interval — the claim on the activation row is the
+/// first, and the order's client key is the third.
+model StrategyDecision {
+  id             String   @id @default(cuid())
+  activationId   String
+  userId         String
+  strategyId     String?
+  windowStart    DateTime
+  evaluatedAt    DateTime @default(now())
+  /// ORDER_PLACED, NO_ACTION or ERROR.
+  outcome        String
+  reasonCode     String
+  reasonMessage  String
+  market         String?
+  /// Redacted facts the pass used: RSI, candles, close, position, risk input, routing.
+  inputsJson     String   @default("{}")
+  /// The condition list with the value and threshold of each, as it was compared.
+  conditionsJson String   @default("[]")
+  orderId        String?
+  createdAt      DateTime @default(now())
+  activation     StrategyActivation @relation(fields: [activationId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([activationId, windowStart])
+  @@index([userId, evaluatedAt])
+}
+
+/// One saved admin-console view, scoped to the owner who saved it (phase 34).
+///
+/// `filtersJson` and `columnsJson` are the exact state the list was in, so
+/// restoring a view is applying the row rather than re-deriving what the owner
+/// meant. The unique key is (owner, section, name): saving the same name again
+/// updates that view instead of creating a second one, and two owners may use
+/// the same name for their own views without seeing each other's.
+model AdminSavedView {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  section     String
+  filtersJson String   @default("{}")
+  columnsJson String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation("AdminSavedViews", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, section, name])
+  @@index([userId, createdAt])
+}
+
+/// One support conversation with one account (phase 35).
+///
+/// A ticket belongs to a customer (`userId`) and may name the domain record that
+/// caused it (`relatedType`/`relatedId`): an order, a withdrawal, a strategy or a
+/// deposit. That pair is stored on the ticket rather than inferred from the
+/// messages so the link survives the conversation being edited, and so the
+/// record's own page can ask "which tickets name me?" with an index rather than a
+/// scan. Status and priority are plain strings for the same reason every other
+/// state column here is: their sets live in `src/lib/support/tickets.ts`, and the
+/// SQLite development schema is derived from this file and refuses enums.
+model SupportTicket {
+  id              String    @id @default(cuid())
+  userId          String
+  subject         String
+  status          String    @default("OPEN")
+  priority        String    @default("NORMAL")
+  assigneeUserId  String?
+  relatedType     String?
+  relatedId       String?
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastMessageAt   DateTime  @default(now())
+  closedAt        DateTime?
+  user            User      @relation("SupportTicketSubject", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy       User?     @relation("SupportTicketCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  assignee        User?     @relation("SupportTicketAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  messages        TicketMessage[]
+
+  @@index([userId, createdAt])
+  @@index([status, priority, updatedAt])
+  @@index([relatedType, relatedId])
+}
+
+/// One message in a ticket's thread (phase 35).
+///
+/// `visibility` is the data-layer separation the phase requires: PUBLIC is what
+/// the account may read through `/api/support/tickets`, INTERNAL is staff-only and
+/// is never selected by the user-facing read. It is a column, not a UI convention,
+/// and `src/lib/support/tickets.ts` is the one place that decides which rows a
+/// user may see. `authorType` distinguishes the account (USER), the operator
+/// (STAFF) and the system (SYSTEM), so a timeline can say who spoke without
+/// joining a user row that may have been deleted.
+model TicketMessage {
+  id           String   @id @default(cuid())
+  ticketId     String
+  authorType   String
+  authorUserId String?
+  visibility   String   @default("PUBLIC")
+  body         String
+  createdAt    DateTime @default(now())
+  ticket       SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author       User?    @relation("TicketMessageAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@index([visibility, createdAt])
+}
+
+/// One internal note about an account (phase 35).
+///
+/// A note is not a ticket message and has no PUBLIC counterpart: it lives in its
+/// own table, so there is no visibility value a bug could flip to reveal it. It is
+/// read by the admin timeline and by nothing the account can reach.
+model UserNote {
+  id           String   @id @default(cuid())
+  userId       String
+  authorUserId String
+  body         String
+  createdAt    DateTime @default(now())
+  user         User     @relation("UserNoteSubject", fields: [userId], references: [id], onDelete: Cascade)
+  author       User     @relation("UserNoteAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// One reusable support reply with placeholders (phase 35).
+///
+/// The body stores `{{user.label}}`, `{{account.summary}}` and friends; the
+/// rendering and the allowed placeholder set live in
+/// `src/lib/support/tickets.ts`, so a saved reply can only insert fields the
+/// caller actually has and an unknown placeholder is refused when it is saved
+/// rather than printed as braces to a customer.
+model SavedReply {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  body            String
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       User     @relation("SavedReplyAuthor", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+}
+
+/// The append-only audit trail (phases 34–36).
+///
+/// Phase 36 adds the tamper-evident chain. Every row written through
+/// `src/lib/audit/record.ts` gets a contiguous `chainIndex`, the `hash` of its
+/// canonical payload and the `previousHash` it follows. `source` and
+/// `correlationId` make a journey traceable across the runner, the API and the
+/// browser. Rows written before phase 36 keep null chain fields and are treated
+/// as the legacy prefix by the verifier rather than retroactively invented into
+/// a chain that did not exist when they were written.
 model AuditEvent {
   id            String   @id @default(cuid())
   actorUserId   String?
@@ -192,8 +954,35 @@ model AuditEvent {
   redactedJson  String   @default("{}")
   actor         User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
+  /// The chain position, starting at 1. Null on rows that predate the chain.
+  chainIndex    Int?     @unique
+  previousHash  String?
+  hash          String?  @unique
+  source        String?
+  correlationId String?
+  /// The state before and after the action, when the writer knows it.
+  beforeJson    String?
+  afterJson     String?
+
   @@index([occurredAt])
   @@index([actorUserId, occurredAt])
+  @@index([objectType, objectId, occurredAt])
+  @@index([correlationId, occurredAt])
+  @@index([chainIndex])
+}
+
+/// How long the owner keeps audit rows (phase 36).
+///
+/// A zero window means "keep everything". The retention job reads this row, and
+/// its deletions are themselves audit events, so the trail records what was
+/// removed instead of silently losing it.
+model AuditRetentionPolicy {
+  id              String   @id @default("global")
+  windowDays      Int      @default(0)
+  updatedAt       DateTime @updatedAt
+  updatedByUserId String?
+
+  @@index([updatedAt])
 }
 
 model RiskPolicySettings {
@@ -207,11 +996,59 @@ model RiskPolicySettings {
   first24HourExposureUsd      String   @default("20")
   approvedSymbolsJson         String   @default("[]")
   killSwitchActive             Boolean  @default(false)
+  /// Phase 22: the owner's real-money switch. Off by default, edited in /admin/risk,
+  /// audited on every change, and the only thing that makes a live venue selectable.
+  /// It sits beside the limits because a person changing it is making a statement about
+  /// money; it is not part of AdjustableRiskPolicy, which describes limits only.
+  liveExecutionEnabled          Boolean  @default(false)
+  /// Who last moved the switch and when. Written only when it changes, so the pair means
+  /// "the last person who turned this on or off" rather than "the last person who saved".
+  liveExecutionChangedByUserId  String?
+  liveExecutionChangedAt        DateTime?
+  /// Phase 25: the owner's own caps. Every one is data, read by the evaluator before an
+  /// order is placed on paper and live alike. Zero means "no limit" and is shown as such —
+  /// a cap that read like a limit while refusing everything would be the opposite of a
+  /// protection, so the meaning is fixed here and tested rather than left to a caller.
+  maxOrderNotionalUsd         String   @default("0")
+  maxStrategyNotionalUsd      String   @default("0")
+  maxOpenPositions            Int      @default(0)
+  maxTradesPerInterval        Int      @default(0)
+  tradeIntervalMinutes        Int      @default(60)
+  cooldownMinutes     Int      @default(0)
+  /// Venue ids an order may use. `[]` means every configured venue.
+  allowedVenuesJson           String   @default("[]")
+  /// When each of the phase-25 limits last took effect, as `{field: iso}`. Written in the
+  /// same transaction as a change, so "since when?" is answerable per limit.
+  limitsEffectiveFromJson     String   @default("{}")
+  /// While this is in the future, new intents are held back (requirement 1's cooldown).
+  cooldownUntil               DateTime?
+  /// Who last engaged or released the kill switch, and when. Written only when it moves.
+  killSwitchChangedByUserId   String?
+  killSwitchChangedAt         DateTime?
   updatedByUserId             String?
   updatedAt                   DateTime @updatedAt
   updatedBy                   User?    @relation("RiskPolicyUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
 
   @@index([updatedByUserId])
+}
+
+/// The owner's per-strategy kill switch (phase 25, requirement 2).
+///
+/// Keyed by the activation because that is the unit the owner sees and the runner
+/// evaluates: one account has one activation, and the switch stops that activation's
+/// strategy without touching anybody else's or the global switch. It is a toggle, not a
+/// one-way trip: `active = false` is the owner turning it back on, and both directions are
+/// audited with the actor and the time.
+model StrategyKillSwitch {
+  activationId    String   @id
+  active          Boolean  @default(false)
+  reason          String?
+  changedByUserId String?
+  changedAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  activation      StrategyActivation @relation(fields: [activationId], references: [id], onDelete: Cascade)
+
+  @@index([active])
 }
 
 model ChainGPTFeatureSettings {
@@ -252,6 +1089,15 @@ model IntegrationFeatureSettings {
   alchemyRpcEnabled   Boolean  @default(false)
   tavilySearchEnabled Boolean  @default(false)
   tavilyExtractEnabled Boolean @default(false)
+  /// SandBase: the assistant's `search_social_posts` tool. Off by default, because the tool
+  /// calls a third-party data API on this deployment's SandBase key and balance; the
+  /// assistant refuses by name when it is off or when no key is configured.
+  sandbaseDataEnabled Boolean @default(false)
+  /// Phase 21: route orders to Binance Spot Testnet with each account's own testnet
+  /// key instead of the development paper venue. Off by default, and the only switch
+  /// that can move an order off the paper venue: a live venue has no `place`
+  /// capability in this build, so there is nothing else to select.
+  testnetOrdersEnabled Boolean @default(false)
   updatedByUserId     String?
   updatedAt           DateTime @updatedAt
   updatedBy           User?    @relation("IntegrationSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
@@ -335,4 +1181,811 @@ model MarketNewsRecord {
   @@unique([providerId, url])
   @@index([publishedAt])
   @@index([fetchedAt])
+}
+
+/// A saved screen (phase 19): one alert condition, one threshold, one symbol set.
+///
+/// `condition` and `threshold` are the same fields `MarketAlert` carries and are
+/// validated by the same function, so a screen can be turned into alerts without
+/// translating between two condition models. `symbolsJson` is a JSON array of the
+/// curated USD markets the screen is asked about; it is stored as text because a
+/// screen is always read whole and never queried by symbol.
+///
+/// The name is unique per account, so saving the same name twice is a refusal
+/// rather than two rows the owner has to tell apart.
+model Screener {
+  id          String           @id @default(cuid())
+  userId      String
+  name        String
+  condition   String
+  threshold   String
+  symbolsJson String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  results     ScreenerResult[]
+
+  @@unique([userId, name])
+  @@index([userId, createdAt])
+}
+
+/// One recorded run of a saved screen.
+///
+/// `asOf` is the moment the screen was asked and `dataAsOf` is the newest candle
+/// that answered it. Both are stored because a result without its as-of time is
+/// not reproducible: re-running at the same `asOf` over the same rows yields the
+/// same `resultHash`, which is how the saved-screen view says "identical" with
+/// evidence. `resultsJson` keeps every per-symbol row, including the symbols that
+/// did not match and the values that were observed.
+model ScreenerResult {
+  id             String   @id @default(cuid())
+  screenerId     String
+  asOf           DateTime
+  dataAsOf       DateTime?
+  providerIdsJson String  @default("[]")
+  resultsJson    String
+  resultHash     String
+  matchedCount   Int
+  createdAt      DateTime @default(now())
+  screener       Screener @relation(fields: [screenerId], references: [id], onDelete: Cascade)
+
+  @@index([screenerId, asOf])
+}
+
+/// One row per outbound provider call (phase 04). The URL is stored redacted —
+/// an Alchemy endpoint carries its key in the path, so the raw URL must never
+/// reach a row. `requestId` and `route` correlate the row with the server log
+/// lines for the request that made the call.
+model ProviderCallRecord {
+  id          String   @id @default(cuid())
+  providerId  String
+  method      String
+  url         String
+  statusCode  Int?
+  outcome     String
+  reasonCode  String?
+  durationMs  Int
+  attempts    Int
+  requestId   String?
+  route       String?
+  safeMessage String?
+  occurredAt  DateTime @default(now())
+
+  @@index([providerId, occurredAt])
+  @@index([outcome, occurredAt])
+  @@index([occurredAt])
+}
+
+/// One reservation per mutating operation (phase 06), so a retried request
+/// returns the original result instead of repeating the work.
+///
+/// The unique `(scope, key)` pair is the whole mechanism: the reservation is an
+/// INSERT, and the unique constraint — not a read-then-write check — decides who
+/// wins, so two concurrent submissions cannot both proceed and a second
+/// serverless instance reaches the same answer without a lock.
+///
+/// `status` walks IN_PROGRESS → COMPLETED (the operation finished and its result
+/// is stored in `resultJson`) or IN_PROGRESS → FAILED (it was released, so a
+/// later retry may try again). `fingerprint` is the hash of the caller's intent,
+/// which is how the same key bound to a *different* operation is detected and
+/// refused (`IDEMPOTENCY_KEY_REUSED`) rather than replayed.
+model IdempotencyRecord {
+  id          String    @id @default(cuid())
+  scope       String
+  key         String
+  fingerprint String
+  status      String    @default("IN_PROGRESS")
+  resultJson  String    @default("{}")
+  reason      String?
+  orderId     String?
+  actorUserId String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  actor       User?     @relation("IdempotencyActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@unique([scope, key])
+  @@index([createdAt])
+}
+
+/// One row per scheduled job the runner knows about (phase 05).
+///
+/// `leaseOwner`/`leaseExpiresAt` are the claim: a job may only be taken when the
+/// lease is empty or has lapsed, and the claim is a single conditional UPDATE, so
+/// two concurrent invocations cannot both take the same job. `attempts` counts
+/// claims, so a run killed by a deploy (`leaseExpiresAt` left behind, no
+/// `lastFinishedAt`) is visible afterwards as an extra attempt on the reclaim.
+/// `nextDueAt` is what makes a second call in the same slot cheap rather than
+/// duplicate work.
+model RunnerJob {
+  id                String    @id @default(cuid())
+  jobId             String    @unique
+  intervalMinutes   Int
+  attempts          Int       @default(0)
+  leaseOwner        String?
+  leaseExpiresAt    DateTime?
+  lastStartedAt     DateTime?
+  lastFinishedAt    DateTime?
+  lastOutcome       String?
+  lastSuccessAt     DateTime?
+  lastFailureAt     DateTime?
+  lastReasonCode    String?
+  lastReasonMessage String?
+  nextDueAt         DateTime
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([nextDueAt])
+}
+
+/// One row per runner invocation (phase 05): which jobs were due, which ran,
+/// which were skipped and why. `heartbeatsJson` holds the per-job heartbeats —
+/// already redacted, like every other persisted payload, so no secret and no user
+/// data reaches this row.
+model RunnerInvocation {
+  id             String   @id
+  owner          String
+  selector       String
+  startedAt      DateTime
+  finishedAt     DateTime
+  durationMs     Int
+  jobsDue        Int
+  jobsRan        Int
+  jobsSkipped    Int
+  jobsFailed     Int
+  outcome        String
+  reasonCode     String?
+  reasonMessage  String?
+  heartbeatsJson String
+  createdAt      DateTime @default(now())
+
+  @@index([startedAt])
+}
+
+/// One withdrawal the owner asked for (phase 14).
+///
+/// The row *is* the reservation's record and the execution's state, which is why
+/// it carries both: the amounts (`amountMinor` gross, `feeMinor`, `netMinor`) are
+/// exact integer strings of the asset's smallest unit, the same way a ledger
+/// amount is, and `nonce` is allocated once and never reused within
+/// (network, fromAddress) — the unique key below is what makes two withdrawals
+/// unable to take one nonce, and what turns a race into a `NONCE_CONFLICT`
+/// instead of two transactions. `rawTransaction` holds the signed bytes that were
+/// broadcast, so a retry re-sends *that* transaction rather than signing a second
+/// one. `holdUntil` is the owner's own new-address window, never a policy this
+/// code invented, and `expiresAt`/`timeoutAt` bound how long a request may wait.
+model Withdrawal {
+  id                    String    @id @default(cuid())
+  userId                String
+  network               String
+  chainId               Int
+  asset                 String
+  decimals              Int
+  amountMinor           String
+  feeMinor              String
+  netMinor              String
+  destination           String
+  destinationDisplay    String
+  status                String
+  reasonCode            String?
+  reasonMessage         String?
+  idempotencyKey        String    @unique
+  fromAddress           String?
+  nonce                 Int?
+  rawTransaction        String?
+  txHash                String?
+  cancelRawTransaction  String?
+  cancelTxHash          String?
+  attempts              Int       @default(0)
+  confirmations         Int       @default(0)
+  confirmationsRequired Int?
+  holdUntil             DateTime?
+  expiresAt             DateTime
+  timeoutAt             DateTime?
+  broadcastAt           DateTime?
+  confirmedAt           DateTime?
+  failedAt              DateTime?
+  cancelledAt           DateTime?
+  releasedAt            DateTime?
+  lastCheckedAt         DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([network, fromAddress, nonce])
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+/// A destination this account has withdrawn to before (phase 14).
+///
+/// The book exists so the owner's new-address control has a fact to read: the
+/// first withdrawal to an address this table does not hold is the one the
+/// configured window applies to, and a window set to zero holds nothing. A row is
+/// therefore an observation — "this account has sent to this address" — and never
+/// an approval step of this code's invention.
+model WithdrawalAddress {
+  id             String   @id @default(cuid())
+  userId         String
+  network        String
+  chainId        Int
+  address        String
+  addressDisplay String
+  useCount       Int      @default(1)
+  firstSeenAt    DateTime @default(now())
+  lastUsedAt     DateTime
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, network, address])
+  @@index([userId])
+}
+
+/// The owner's own withdrawal controls (phase 14).
+///
+/// One number, and the whole of the hold in front of a withdrawal this account asks
+/// for: how long a first send to an address this account has never used waits before
+/// it is queued. It is admin data rather than a constant because only the owner can
+/// decide how long their own money waits, and zero is a complete answer — it holds
+/// nothing, which is what this deployment ships with when the row is absent and no
+/// default is configured. There is no approval flag and no review state: a withdrawal
+/// the owner asks for is not gated. `paused` is the one stop switch, added for the
+/// custodial launch — it stops *new* outbound money immediately (requests are refused
+/// and the processor sends nothing) and is never an approval step in front of an
+/// individual withdrawal.
+model WithdrawalSettings {
+  id                      String   @id @default("global")
+  newAddressWindowMinutes Int      @default(60)
+  /// When true, no new withdrawal is accepted and no reserved withdrawal is sent.
+  /// Already-broadcast transfers are still confirmed and settled.
+  paused                  Boolean  @default(false)
+  pausedChangedByUserId   String?
+  pausedChangedAt         DateTime?
+  updatedByUserId         String?
+  updatedAt               DateTime @updatedAt
+  updatedBy               User?    @relation("WithdrawalSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([updatedByUserId])
+  @@index([pausedChangedByUserId])
+}
+
+/// One version of the fee table (phase 16).
+///
+/// The table is versioned by time rather than updated in place, and that is the whole
+/// design: `effectiveFrom` says when a version starts applying, a save inserts a new
+/// row, and nothing is ever edited or deleted. So "what did a withdrawal cost in
+/// September?" is answerable from these rows alone, an audit event's before/after pair
+/// points at rows that still say what they said, and a future-dated change can be
+/// staged without changing today's price. A single mutable row with an
+/// `effectiveFrom` column could not do any of that — it would rewrite the past every
+/// time the owner saved.
+///
+/// The values are strings for the same reason every amount in this schema is: a fee is
+/// money, and money is parsed into exact minor units at the boundary rather than
+/// carried as a float. `withdrawalFeesJson` and `networkCostsJson` are
+/// `{ "USDT": "1" }`-shaped maps keyed by asset; `tiersJson` is the account tiers the
+/// pricing page renders. Zero is a complete answer everywhere — it is the value this
+/// table ships with, and the surfaces render it as "no fee" rather than as an absence.
+model FeeSchedule {
+  id                    String   @id @default(cuid())
+  effectiveFrom         DateTime
+  withdrawalFeesJson    String   @default("{}")
+  networkCostsJson      String   @default("{}")
+  performanceFeePercent String   @default("0")
+  /// Phase 28: the assumptions every backtest prices a fill with. They are modelling
+  /// inputs, not charges — no order is debited by them — but they live on the same
+  /// versioned row so "change the fee in /admin/fees, re-run" is one lookup rather than
+  /// a second settings screen. `tradingFeeBps` per side, `spreadBps` and
+  /// `slippageBps` adverse per side, and `fundingBpsPerDay` on a leveraged position.
+  tradingFeeBps         String   @default("10")
+  spreadBps             String   @default("2")
+  slippageBps           String   @default("5")
+  fundingBpsPerDay      String   @default("0")
+  tiersJson             String   @default("[]")
+  createdByUserId       String?
+  createdAt             DateTime @default(now())
+  createdBy             User?    @relation("FeeScheduleCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([effectiveFrom])
+  @@index([createdByUserId])
+}
+
+/// One immutable version of an owner's strategy (phase 28).
+///
+/// A save inserts a row and never edits one, for the same reason the fee table is
+/// versioned: the runs and paper results that named a version must still be able to
+/// read the exact rules they were produced from. `name` groups the versions, and the
+/// unique index makes "version 4 of this strategy" a fact rather than a hope.
+///
+/// `promptJson`, `modelOutput`, `providerId` and `model` are the generation trace. They
+/// are stored with the version that came out of them, so any rule can be traced back to
+/// the sentence and the answer that produced it. A hand-written version leaves them null.
+model StrategyDefinition {
+  id             String   @id @default(cuid())
+  userId         String
+  name           String
+  version        Int
+  market         String
+  timeframe      String   @default("1d")
+  /// The plain-text rules the owner reads and edits, exactly as rendered.
+  text           String
+  definitionJson String
+  /// generated, manual or edit.
+  origin         String
+  promptJson     String?
+  modelOutput    String?
+  providerId     String?
+  model          String?
+  fallbackFrom   String?
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  backtestRuns   BacktestRun[]
+
+  @@unique([userId, name, version])
+  @@index([userId, createdAt])
+}
+
+/// One run of one definition version (phase 28).
+///
+/// The row carries everything needed to read the result honestly: the exact version it
+/// tested, the cost assumptions it applied, the metrics and the full trade list. `kind`
+/// is BACKTEST, SWEEP or PAPER. A sweep writes one row for the whole sweep and shares a
+/// `sweepId`, so its per-run comparisons remain one event rather than eight unrelated
+/// runs. Nothing here is editable: a run is history.
+model BacktestRun {
+  id                   String   @id @default(cuid())
+  userId               String
+  definitionId         String
+  definitionVersion    Int
+  kind                 String
+  sweepId              String?
+  symbol               String
+  strategyText         String
+  parametersJson       String   @default("{}")
+  costAssumptionsJson  String
+  metricsJson          String
+  resultJson           String
+  createdAt            DateTime @default(now())
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  definition           StrategyDefinition  @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([definitionId, definitionVersion])
+  @@index([sweepId])
+}
+
+/// A strategy the owner built and published to the runner (phase 30).
+///
+/// The bot row is the thing the owner names, edits, deletes and starts. Its rules live in
+/// `configJson` (the builder's own form) and, once published, in the phase-28 definition
+/// version `definitionId` holds: publishing is what turns a draft into rules the runner can
+/// load. `definitionText` and `definitionJson` are snapshots of that published version, so a
+/// later edit of the definition series cannot change what this bot was published with — the
+/// same reason a backtest stores its text.
+///
+/// `state` is the owner's lifecycle: DRAFT, PUBLISHED or DELETED. "Running" is deliberately
+/// not here: that is the account's `StrategyActivation`, which names the bot as its
+/// strategy, and keeping the two apart is what lets an owner stop the account without
+/// deleting the bot and delete a bot without rewriting what a past run decided.
+///
+/// A deleted row is kept (with `deletedAt`) so its history stays readable; the runner refuses
+/// it by state, and the delete path stops an activation that names it.
+model Bot {
+  id                String    @id @default(cuid())
+  userId            String
+  name              String
+  description       String    @default("")
+  state             String    @default("DRAFT")
+  market            String
+  configJson        String
+  definitionId      String?
+  definitionVersion Int?
+  definitionText    String?
+  definitionJson    String?
+  /// The slug of the marketplace template this bot was cloned from, if any. A slug rather
+  /// than an id because the built-in templates are code, not rows, and a clone must record
+  /// its origin whether the template came from the catalog or another account.
+  templateSlug      String?
+  publishedAt       DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, state, createdAt])
+  @@index([templateSlug])
+}
+
+/// A strategy template another account can clone (phase 30).
+///
+/// The row is a snapshot, not a pointer: `configJson`, `definitionText` and
+/// `definitionJson` are what cloning copies, so a change to the source bot never rewrites a
+/// template that was already shared. `authorLabel` is the display form of the author — the
+/// same masked-for-reading value the rest of the UI uses — and `authorUserId` keeps the
+/// auditable link without exposing a wallet address in the marketplace.
+model StrategyTemplate {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String
+  description     String
+  authorUserId    String?
+  authorLabel     String
+  market          String
+  configJson      String
+  definitionText  String
+  definitionJson  String
+  sourceBotId     String?
+  createdAt       DateTime @default(now())
+  author          User?    @relation("StrategyTemplateAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@index([authorUserId, createdAt])
+}
+
+/// One per-user accounting window for the assistant (phase 26).
+///
+/// The assistant costs money per request, so a limit that lives only in a module
+/// variable is a limit that resets on every deploy — and a deploy is exactly when a
+/// loop is likeliest to be retried. The row is keyed by `(userId, windowKind,
+/// windowStart)`, incremented with an upsert, and carries the tokens the provider
+/// reported and the cost those tokens imply at the configured prices. A window with
+/// no row has spent nothing; a window whose row cannot be read is a refusal, not an
+/// allowance.
+///
+/// `windowKind` is `HOUR` or `DAY` and `windowStart` is that window's floor in UTC, so
+/// two processes computing the same window land on the same row rather than each
+/// keeping their own count. Cost is micro-dollars in an integer for the same reason
+/// every amount in this schema is an integer: it is money.
+model AssistantUsageWindow {
+  id           String   @id @default(cuid())
+  userId       String
+  windowKind   String
+  windowStart  DateTime
+  requests     Int      @default(0)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  costMicros   Int      @default(0)
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, windowKind, windowStart])
+  @@index([windowStart])
+}
+
+/// Which provider answers which feature, in what order (phase 27).
+///
+/// One row for the whole deployment, written by an administrator and audited in the
+/// same transaction. `routesJson` is the ordered target list per feature —
+/// `{ "assistant": [{ "providerId": "ai-gateway", "model": "..." }], ... }` — kept as
+/// text because a route is a small document that must be validated as a whole before
+/// it is saved, not a set of columns each save can half-update. A missing row is the
+/// documented default built from the environment, so an install that never opens the
+/// panel behaves exactly as it did before the panel existed.
+///
+/// `monthlyBudgetUsd` is a *signal*. It is displayed against the month's recorded cost
+/// and never refuses a request; there is no code path that reads it as a cap.
+model AiProviderSettings {
+  id                 String   @id @default("global")
+  currency           String   @default("USD")
+  usdPerCurrencyUnit String   @default("1")
+  monthlyBudgetUsd   String?
+  routesJson         String   @default("{}")
+  updatedByUserId    String?
+  updatedAt          DateTime @updatedAt
+  updatedBy          User?    @relation("AiProviderSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([updatedByUserId])
+}
+
+/// One row per AI request attempt (phase 27).
+///
+/// Written after the provider has answered or failed, one row per attempt, so a
+/// fallback is two rows: the failure that says why, and the success whose
+/// `fallbackFrom` names the target that did not answer. That is what makes "the
+/// fallback was used" a reportable fact rather than a log line.
+///
+/// The row holds accounting only: provider, model, units, duration, outcome and the
+/// computed cost. It deliberately has no field for a prompt, an answer or a request
+/// body — a transcript is not accounting, and an accounting table must never become a
+/// place a credential lands. `costMicrosUsd` is nullable because a provider with no
+/// configured rate has an unknown cost, which the report counts separately rather than
+/// showing as zero. Costs are integer micro-dollars, like every money column here.
+model AiRequestRecord {
+  id            String   @id @default(cuid())
+  userId        String?
+  feature       String
+  task          String
+  providerId    String
+  model         String?
+  outcome       String
+  errorCode     String?
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  units         Int      @default(0)
+  unitKind      String
+  durationMs    Int      @default(0)
+  costMicrosUsd Int?
+  currency      String   @default("USD")
+  fallbackFrom  String?
+  createdAt     DateTime @default(now())
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([feature, createdAt])
+  @@index([userId, createdAt])
+  @@index([providerId, createdAt])
+}
+
+/// A mutex on one ledger account, for the length of one transaction.
+///
+/// A balance in this ledger is the sum of its entries, so there is no balance row
+/// to take a lock on — and two reservation requests that both read the same
+/// available balance and then both insert their own entries would each be
+/// individually valid while together spending the same money. The lock is the row
+/// that makes them mutually exclusive: it is inserted *before* the balance is read
+/// inside the same database transaction, its `key` is unique so only one holder
+/// ever has it, and it is deleted before that transaction ends. `expiresAt` is
+/// there so a request killed mid-flight cannot wedge an account: a lock whose
+/// expiry has passed can be taken over by a conditional update.
+model LedgerAccountLock {
+  key        String   @id
+  holder     String
+  acquiredAt DateTime
+  expiresAt  DateTime
+
+  @@index([expiresAt])
+}
+
+/// One inbound-signal credential (phase 31).
+///
+/// The token in the endpoint URL is the *name* of the credential; the secret that signs the
+/// body is separate and is never returned after creation. Only the token's hash is stored, so
+/// a database dump yields no usable endpoint, and `tokenPrefix` is the masked fragment the
+/// settings panel and the signal log show instead. The signing secret is sealed with
+/// AES-256-GCM under the same key as the venue vault but with its own AAD, so signal material
+/// cannot be decrypted as webhook material or as an exchange key.
+///
+/// `replayWindowSeconds` is the owner's bound on how old a signed request may be. It is per
+/// token because a TradingView alert and a script posting every second can reasonably want
+/// different tolerances, and because the phase requires the window to be configurable.
+model SignalToken {
+  id                 String   @id @default(cuid())
+  userId             String
+  label              String
+  /// First characters of the token, for recognition. Not enough to reconstruct it.
+  tokenPrefix        String
+  /// SHA-256 of the token, hex. The lookup key for an inbound request.
+  tokenHash          String   @unique
+  secretCiphertext   String
+  secretIv           String
+  secretAuthTag      String
+  replayWindowSeconds Int     @default(300)
+  status             String   @default("ACTIVE")
+  lastUsedAt         DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events             SignalEvent[]
+
+  @@index([userId, createdAt])
+}
+
+/// One inbound signal attempt, accepted or not (phase 31).
+///
+/// Append-only: a rejected signature and a replay are rows as much as an accepted signal is,
+/// because "nothing happened" is the answer an operator most needs to be able to look up.
+/// The row never carries the signing secret, the raw body or the token — `bodyHash` is a
+/// SHA-256 of the bytes and the token appears only through its masked prefix.
+///
+/// `dedupeKey` is `${tokenId}:${signalId}` and is set only on the first attempt for that id.
+/// It is the unique column that makes a replay a duplicate rather than a second action, and
+/// duplicate attempts deliberately leave it null so the refusal is itself logged. The column
+/// is nullable precisely so "this attempt is not the first" can be stored.
+model SignalEvent {
+  id              String   @id @default(cuid())
+  userId          String
+  tokenId         String?
+  signalId        String?
+  receivedAt      DateTime @default(now())
+  source          String
+  signatureStatus String
+  decision        String
+  reasonCode      String
+  reasonMessage   String
+  action          String?
+  market          String?
+  notionalUsd     String?
+  bodyHash        String
+  orderId         String?
+  duplicateOfId   String?
+  dedupeKey       String?  @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token           SignalToken? @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+
+  @@index([userId, receivedAt])
+  @@index([decision, receivedAt])
+  @@index([tokenId, receivedAt])
+}
+
+/// One outbound webhook endpoint (phase 31).
+///
+/// The signing secret belongs to the endpoint, not the account: two receivers must not be able
+/// to verify each other's deliveries, and revoking one endpoint must not invalidate another.
+/// It is sealed like the inbound secret and never returned after creation.
+///
+/// `health` and `consecutiveFailures` are the visible state the admin panel reads. An endpoint
+/// becomes `UNHEALTHY` after three consecutive failed deliveries and returns to `HEALTHY` on
+/// the next success; `lastError` is the receiver's safe answer, never the request.
+model WebhookSubscription {
+  id                  String   @id @default(cuid())
+  userId              String
+  label               String
+  url                 String
+  eventType           String
+  secretCiphertext    String
+  secretIv            String
+  secretAuthTag       String
+  active              Boolean  @default(true)
+  health              String   @default("HEALTHY")
+  consecutiveFailures Int      @default(0)
+  lastAttemptAt       DateTime?
+  lastSuccessAt       DateTime?
+  lastError           String?
+  revokedAt           DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries          WebhookDelivery[]
+
+  @@index([userId, eventType])
+  @@index([active, health])
+}
+
+/// One delivery attempt for one webhook event (phase 31).
+///
+/// A row is one attempt, not one event: `deliveryKey` groups the attempts and
+/// `@@unique([deliveryKey, attempt])` makes a retry a new row rather than an overwrite. That
+/// is what lets the panel show first failure, wait, second failure and the answer each time.
+///
+/// `status` is `PENDING` until an attempt completes, then `DELIVERED` or `FAILED`.
+/// `nextAttemptAt` is the retry schedule computed from the bounded backoff, and a failed row
+/// with no next attempt is final. The payload is the event body that was signed; it contains
+/// no secret and no credential.
+/// One credential for the public API (phase 32).
+///
+/// A key is issued to an account, never to an agent: the owner's account is the scope of
+/// everything readable, and an agent key additionally names the one `AgentAccount` it may
+/// trade. Only the SHA-256 of the key is stored, so a database dump yields no usable
+/// credential, and `prefix` is the masked fragment the owner's list and the audit trail show.
+///
+/// `scopesJson` is a JSON array of `read`, `trade` and `agent`. It is a string rather than an
+/// enum because the SQLite development schema is derived from this file and refuses enums;
+/// `lib/api/keys.ts` validates it on every read. A trade or agent scope without an
+/// `agentAccountId` is refused at issuance and at authentication, so a key can never fall
+/// back to the owner's main account.
+///
+/// Revocation is a column, not a cache: every request looks the key up by hash and checks
+/// `revokedAt`, so a revocation is effective on the next request without a push or a TTL.
+model ApiKey {
+  id                 String   @id @default(cuid())
+  userId             String
+  label              String
+  /// First characters of the key, for recognition. Not enough to reconstruct it.
+  prefix             String
+  /// SHA-256 of the whole key, hex. The lookup key for an authenticated request.
+  keyHash            String   @unique
+  scopesJson         String   @default("[\"read\"]")
+  agentAccountId     String?
+  rateLimitPerMinute Int      @default(60)
+  expiresAt          DateTime?
+  lastUsedAt         DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation("UserApiKeys", fields: [userId], references: [id], onDelete: Cascade)
+  agentAccount       AgentAccount? @relation(fields: [agentAccountId], references: [id], onDelete: SetNull)
+  rateWindows        ApiRateWindow[]
+  approvals          AgentApproval[]
+
+  @@index([userId, createdAt])
+}
+
+/// One fixed-minute counter per key (phase 32).
+///
+/// A row per window rather than a counter on the key, because two concurrent requests must
+/// both be counted: the unique `(keyId, windowStart)` makes the upsert the serialisation
+/// point, and the increment is done by the database rather than by a read-modify-write.
+/// `windowStart` is truncated to the minute the request arrived in, so the reset time in a
+/// 429 is a fact about the row the caller was counted in.
+model ApiRateWindow {
+  id          String   @id @default(cuid())
+  keyId       String
+  windowStart DateTime
+  count       Int      @default(0)
+  apiKey      ApiKey   @relation(fields: [keyId], references: [id], onDelete: Cascade)
+
+  @@unique([keyId, windowStart])
+  @@index([windowStart])
+}
+
+/// The one account an agent key may trade (phase 32).
+///
+/// It is a real `User` row (`ledgerUserId`) so the existing order and ledger paths treat an
+/// agent's trade exactly like any other account's: the order belongs to the agent, not to the
+/// owner, and the agent has no wallet identity to sign in with. The owner reads the account
+/// through this row. `approvalThresholdUsdCents` is optional data: null means trades execute,
+/// a number means a trade above it creates a pending `AgentApproval` the owner can see.
+model AgentAccount {
+  id                         String   @id @default(cuid())
+  ownerUserId                String
+  ledgerUserId               String   @unique
+  name                       String
+  status                     String   @default("ACTIVE")
+  approvalThresholdUsdCents  Int?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  owner                      User     @relation("OwnerAgentAccounts", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  ledgerUser                 User     @relation("AgentLedgerAccounts", fields: [ledgerUserId], references: [id], onDelete: Restrict)
+  apiKeys                    ApiKey[]
+  approvals                  AgentApproval[]
+
+  @@unique([ownerUserId, name])
+  @@index([ownerUserId, createdAt])
+}
+
+/// A trade that needed the owner's attention (phase 32).
+///
+/// The request is stored as the JSON the agent sent, with the server-computed notional, so an
+/// approval is a decision about exactly the order that would be placed rather than a re-run of
+/// a request that may have changed. `expiresAt` is visible on every read; past it the row is
+/// reported as `EXPIRED` and can no longer be approved. Nothing is refused silently: an
+/// approval-required trade returns 202 with this row's id and expiry.
+model AgentApproval {
+  id               String   @id @default(cuid())
+  ownerUserId      String
+  agentAccountId   String
+  apiKeyId         String?
+  status           String   @default("PENDING")
+  requestJson      String
+  market           String
+  side             String
+  quantity         String
+  notionalUsdCents Int
+  orderId          String?
+  expiresAt        DateTime
+  decidedAt        DateTime?
+  decidedByUserId  String?
+  decisionNote     String?
+  createdAt        DateTime @default(now())
+  owner            User     @relation("AgentApprovalOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  agentAccount     AgentAccount @relation(fields: [agentAccountId], references: [id], onDelete: Cascade)
+  apiKey           ApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  decidedBy        User?    @relation("AgentApprovalDecider", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([ownerUserId, status, createdAt])
+  @@index([agentAccountId, createdAt])
+  @@index([expiresAt])
+}
+
+model WebhookDelivery {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  userId         String
+  eventType      String
+  deliveryKey    String
+  attempt        Int      @default(1)
+  payload        String
+  status         String   @default("PENDING")
+  responseStatus Int?
+  error          String?
+  durationMs     Int?
+  nextAttemptAt  DateTime?
+  attemptedAt    DateTime?
+  createdAt      DateTime @default(now())
+  subscription   WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([deliveryKey, attempt])
+  @@index([status, nextAttemptAt])
+  @@index([userId, createdAt])
+  @@index([subscriptionId, createdAt])
 }

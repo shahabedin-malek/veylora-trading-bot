@@ -1,0 +1,21 @@
+-- Phase 40: where an order intent came from.
+--
+-- A column rather than a sentence in the audit trail because the account page's
+-- assistant paper-performance block selects on it: it replays only the fills the
+-- assistant's place_paper_order tool submitted, so a fill the owner placed on /trade,
+-- an activated strategy or the public trading API cannot be counted as the
+-- assistant's result.
+--
+-- `manual` is the default because every path that could place an order before this
+-- column existed was the owner's own ticket, and because a caller that has not been
+-- taught the parameter must produce an explainable origin rather than an empty one.
+-- The value set is enforced in `src/lib/orders/origin.ts`, not as a database enum:
+-- the local SQLite development schema is derived from `prisma/schema.prisma`, and
+-- `scripts/dev-database.mjs` refuses to derive a schema containing an enum.
+--
+-- Verified against the DDL Prisma derives from `prisma/schema.prisma`
+-- (`prisma migrate diff --from-empty --to-schema-datamodel`): `TEXT NOT NULL DEFAULT
+-- 'manual'`. This migration only adds a column, so it is safe on an existing table.
+
+-- AlterTable
+ALTER TABLE "TradeOrder" ADD COLUMN "origin" TEXT NOT NULL DEFAULT 'manual';
